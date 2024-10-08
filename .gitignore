@@ -50,3 +50,16 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+// vcs generates files when compiling
+csrc/
+novas.*
+novas_dump.*
+oadpli1
+simv
+simv.*
+ucli.*
+*.fsdb
+*.vpd
+verdiLog/
+image2display.py

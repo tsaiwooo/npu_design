@@ -5,8 +5,8 @@ RTL_DIR = RTL
 TESTBENCH_DIR = testbench
 
 # Define design module
-DESIGN_FILE = mac.v
-TESTBENCH_FILE = tb_mac.v
+DESIGN_FILE = sram_dp.v
+TESTBENCH_FILE = tb_sram_dp.v
 
 # Define source files
 DESIGN_SRC = $(RTL_DIR)/$(DESIGN_FILE)

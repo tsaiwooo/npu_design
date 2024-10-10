@@ -69,8 +69,8 @@ sram_dp #(
 integer i;
 integer pass = 0;
 integer rand_value;
-integer write_idx = 0;
-reg [7:0] tb_data[2100:0];
+reg [DATA_WIDTH*MAX_CHANNELS-1:0] write_data_mem [511:0]; // Buffer to store written data for 512 entries
+
 
 // Test data
 initial begin
@@ -89,63 +89,78 @@ initial begin
     // Wait for the system to initialize
     #(PERIOD*2);
 
-    // Loop through 1 to 64 channels
-    for (i = 1; i <= MAX_CHANNELS; i = i + 1) begin
-        // Write operation
+    // Step 1: Write first 64 entries in a single operation
+    @(posedge clk1_i);
+    en1_i = 1;
+    we1_i = 1;
+    num_channels1_i = 64;  // Write 64 channels
+
+    // Write consecutive addresses and random data to SRAM
+    addr1_i = 0;
+    data1_i = 0;
+    for (integer j = 0; j < 64; j = j + 1) begin
+        addr1_i[ADDRW*(j+1)-1 -: ADDRW] = j;  // Consecutive addresses
+        rand_value = $urandom_range(255, 0);  // Random data
+        data1_i[DATA_WIDTH*(j+1)-1 -: DATA_WIDTH] = rand_value;
+        write_data_mem[j] = rand_value; // Store the written data for later verification
+    end
+
+    @(posedge clk1_i);
+    en1_i = 0;
+    we1_i = 0;
+
+    // Wait for write completion
+    @(posedge clk1_i);
+
+    // Step 2: Write additional entries while reading the previous ones in parallel
+    for (i = 64; i < 512; i = i + 64) begin
+        // Write operation (64 channels per cycle)
         @(posedge clk1_i);
         en1_i = 1;
         we1_i = 1;
-        num_channels1_i = i;  // Write i channels
+        num_channels1_i = 64;  // Write 64 channels
 
-        // Write addresses and data
         addr1_i = 0;
         data1_i = 0;
-        for (integer j = 0; j < i; j = j + 1) begin
-            addr1_i[ADDRW*(j+1)-1 -: ADDRW] = j;  // Writing to consecutive addresses
-            rand_value = $urandom_range(255,0);
-            // tb_data[wrire_idx] = rand_value;
-            // $display("Random value :%0d",rand_value);
-            data1_i[DATA_WIDTH*(j+1)-1 -: DATA_WIDTH] = rand_value;  // Data = address + 1
-            // write_idx = wrire_idx + 1;
+        for (integer j = 0; j < 64; j = j + 1) begin
+            addr1_i[ADDRW*(j+1)-1 -: ADDRW] = i + j;  // Write to consecutive addresses
+            rand_value = $urandom_range(255, 0);
+            data1_i[DATA_WIDTH*(j+1)-1 -: DATA_WIDTH] = rand_value;
+            write_data_mem[i + j] = rand_value; // Store written data for later checking
         end
 
-        @(posedge clk1_i);
-        en1_i = 0;
-        we1_i = 0;
-
-        // Wait for write completion
-        @(posedge clk1_i);
-
-        // Read operation
-        @(posedge clk2_i);
+        // Parallel read operation (64 channels per cycle)
         en2_i = 1;
         we2_i = 0;
-        num_channels2_i = i;  // Read i channels
+        num_channels2_i = 64;  // Read 64 channels
 
         addr2_i = 0;
-        for (integer k = 0; k < i; k = k + 1) begin
-            addr2_i[ADDRW*(k+1)-1 -: ADDRW] = k;  // Reading from the same consecutive addresses
+        for (integer k = 0; k < 64; k = k + 1) begin
+            addr2_i[ADDRW*(k+1)-1 -: ADDRW] = i - 64 + k;  // Read from addresses written earlier
         end
 
-        // Wait for the data to be available
         @(posedge clk2_i);
         if (ready2_o) begin
             // Compare the read data with the expected values
-            for (integer l = 0; l < i; l = l + 1) begin
-                // if (data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH] !== l + 1) begin
-                if (data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH] !== data1_i[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH]) begin
-                    $display("Test failed for channel %0d: expected %0d, got %0d", l, data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH], data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH]);
+            for (integer l = 0; l < 64; l = l + 1) begin
+                if (data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH] !== write_data_mem[i - 64 + l]) begin
+                    $display("Test failed at addr %0d: expected %0d, got %0d", i-64+l, write_data_mem[i-64+l], data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH]);
                     $finish;
                 end else begin
-                    $display("Test passed for channel %0d: expected %0d, got %0d", l, data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH], data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH]);
+                    $display("Test passed at addr %0d: expected %0d, got %0d", i-64+l, write_data_mem[i-64+l], data2_o[DATA_WIDTH*(l+1)-1 -: DATA_WIDTH]);
                     pass = pass + 1;
                 end
             end
         end
 
+        @(posedge clk1_i);
+        en1_i = 0;
+
         @(posedge clk2_i);
         en2_i = 0;
     end
+
+    $display("Total passes: %0d", pass);
     
     $display("%s", "                                                                      :+**************-.            ");
     $display("%s", "                                                                     :+****************.            ");

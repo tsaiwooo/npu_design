@@ -63,3 +63,4 @@ ucli.*
 *.vpd
 verdiLog/
 image2display.py
+fpga_npu

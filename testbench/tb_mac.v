@@ -10,15 +10,15 @@ module tb_mac();
     reg   rst                                  = 0;
     reg   [10:0]   num_macs_i =                   0;           
     reg   valid_in                             = 0;
-    reg   [DATA_WIDTH-1:0]  data [MAX_MACS-1:0];
-    reg   [DATA_WIDTH-1:0]  weight [MAX_MACS-1:0];
+    reg   signed [DATA_WIDTH-1:0]  data [MAX_MACS-1:0];
+    reg   signed [DATA_WIDTH-1:0]  weight [MAX_MACS-1:0];
 
     // Flattened versions of the arrays for connection to the DUT as reg
     reg [MAX_MACS*DATA_WIDTH-1:0] data_flat;
     reg [MAX_MACS*DATA_WIDTH-1:0] weight_flat;
 
     // mac Outputs
-    wire  [2*DATA_WIDTH-1:0]  mac_out;
+    wire  signed [2*DATA_WIDTH-1:0]  mac_out;
     wire  valid_out;
 
     // Pass/Fail counters
@@ -32,9 +32,9 @@ module tb_mac();
 
     // Reset logic
     initial begin
-        rst = 1;
-        #(PERIOD*3);
         rst = 0;
+        #(PERIOD*3);
+        rst = 1;
     end
 
     initial begin
@@ -67,7 +67,8 @@ module tb_mac();
         integer cycle_count = 0;
         integer start_cycle = 0;
         integer end_cycle = 0;
-        reg [2*DATA_WIDTH-1:0] expected_result = 0;
+        // reg signed [2*DATA_WIDTH-1:0] expected_result = 0;
+        reg signed [15:0] expected_result = 0;
         reg start_flag = 0;  // A flag to ensure start_cycle is only set once
         reg result_checked = 0;  // A flag to ensure the result is only checked once
         integer i;
@@ -79,13 +80,14 @@ module tb_mac();
 
             // Initialize data and weight
             for (i = 0; i < MAX_MACS; i = i + 1) begin
-                data[i] = i + 1;            // Example data values: 1, 2, 3, ..., 32
+                data[i] = i + 1 - 100;            // Example data values: 1, 2, 3, ..., 32
                 weight[i] = MAX_MACS - i;   // Example weight values: 32, 31, 30, ..., 1
                 data_flat[i*DATA_WIDTH +: DATA_WIDTH] = data[i];
                 weight_flat[i*DATA_WIDTH +: DATA_WIDTH] = weight[i];
             end
 
             // Set valid_in to 1 to start processing
+            @(posedge clk);
             valid_in = 1;
             
             // Wait for result to be computed

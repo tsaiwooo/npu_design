@@ -16,7 +16,7 @@ module sram
     always@(posedge clk_i) begin
         if (en_i) begin
             // write operation
-            if(we_1) begin
+            if(we_i) begin
                 RAM[addr_i] <= data_i;
             // read operaition
             end else begin

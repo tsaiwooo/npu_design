@@ -14,7 +14,7 @@ module multi_sram
 
 
     // Intermediate wires to connect each SRAM's inputs and outputs
-    wire [MAX_DATA_WIDTH-1:0] sram_data_in[0:NUM_SRAMS-1];
+    wire signed [MAX_DATA_WIDTH-1:0] sram_data_in[0:NUM_SRAMS-1];
     wire [MAX_DATA_WIDTH-1:0] sram_data_out[0:NUM_SRAMS-1];
     wire [MAX_ADDR_WIDTH-1:0] sram_addr[0:NUM_SRAMS-1];
 
@@ -25,8 +25,7 @@ module multi_sram
             assign data_out[i * MAX_DATA_WIDTH +: DATA_WIDTHS[i]] = sram_data_out[i];
             assign sram_addr[i] = addr[i * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH];
         end
-    endgenerate
-
+    endgenerate    
     // Generate SRAM instances
     generate
         for (i = 0; i < NUM_SRAMS; i = i + 1) begin : sram_gen

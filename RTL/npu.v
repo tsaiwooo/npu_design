@@ -1,16 +1,7 @@
-// sram_dp 是scratch memory, 不是真正的sram
-// 真正的sram只能read or write 且等到下一個cycle才能拿到資料
-// FUTURE WORK: 1. 第一筆資料或是透過傳register的方式知道是幾*幾的kernel, 然後分別存在不同的sram, 這樣就可以減少cycle數, 缺點： 不知道到底會需要多少個sram
-// FUTURE WORK: 2. 還有加快速度的方法就是給一個address, 然後拿後面N筆連續資料
-/****************             current flow            ****************/
-/*      dma transfer image to sram[GEMM0_SRAM_IDX]                   */
-/*      dma transfer kernel to sram[GEMM1_SRAM_IDX]                  */
-/*      compute convolution and store result to sram[ELEM0_SRAM_IDX] */
-/*      dma transfer result from sram[ELEM0_SRAM_IDX] to output      */
 `timescale 1ns / 1ps
 `include "params.vh"
 
-module npu#
+module npu #
 (
     parameter MAX_MACS = 64,
     parameter ADDR_WIDTH = 13,
@@ -24,338 +15,104 @@ module npu#
     input  wire                   s00_axis_aclk,
     input  wire                   s00_axis_aresetn,
     input  wire signed [C_AXIS_TDATA_WIDTH-1:0]  s00_axis_tdata,
-    input  wire [(C_AXIS_TDATA_WIDTH/8)-1 : 0] s00_axis_tstrb,
+    input  wire [(C_AXIS_TDATA_WIDTH/8)-1 : 0]   s00_axis_tstrb,
     input  wire                   s00_axis_tvalid,
     output wire                   s00_axis_tready,
     input  wire                   s00_axis_tlast,
-    input  wire [ 2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  // use for channel number
+    input  wire [2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  
 
-    
-    /* * AXI master interface (output of the FIFO) */
+    /* AXI master interface (output of the FIFO) */
     input  wire                   m00_axis_aclk,
     input  wire                   m00_axis_aresetn,
-    output reg signed [2*C_AXIS_MDATA_WIDTH-1:0]  m00_axis_tdata,
-    output reg [(C_AXIS_MDATA_WIDTH/8)-1 : 0] m00_axis_tstrb,
-    output reg                   m00_axis_tvalid,
+    output wire signed [2*C_AXIS_MDATA_WIDTH-1:0]  m00_axis_tdata,
+    output wire [(2*C_AXIS_MDATA_WIDTH/8)-1 : 0]   m00_axis_tstrb, 
+    output wire                   m00_axis_tvalid,
     input  wire                   m00_axis_tready,
-    output reg                   m00_axis_tlast,
-    output reg [NUM_CHANNELS_WIDTH-1:0] m00_axis_tuser  // use for channel number
+    output wire                   m00_axis_tlast,
+    output wire [NUM_CHANNELS_WIDTH-1:0]           m00_axis_tuser  
 );
-    localparam ST_IMG=0;
-    localparam ST_KER=1;
-    reg [1:0] ST_state = 0; // use for store data from axi4-stream
 
-    // sram input and output signals
-    reg [NUM_SRAMS-1:0] en;
-    reg [NUM_SRAMS-1:0] we;
-    reg [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr;
-    reg [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_in;
-    wire [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_out;
+    reg [2:0] state = IDLE, next_state;
+
+    // axi_stream_input signals
+    wire                    write_enable;
+    wire [ADDR_WIDTH-1:0]   write_address;
+    wire signed [C_AXIS_TDATA_WIDTH-1:0] write_data;
+    wire [2:0]              data_type;
+    wire                    data_ready;
+    wire [ADDR_WIDTH-1:0]   img_row;
+    wire [ADDR_WIDTH-1:0]   img_col;
+    wire [ADDR_WIDTH-1:0]   ker_row;
+    wire [ADDR_WIDTH-1:0]   ker_col;
+    wire [NUM_CHANNELS_WIDTH-1:0] num_channels;
 
 
-    reg [3:0] state = 4'd0, next_state;  // Current state of the FSM
+    // axi_stream_output signals
+    wire                   sram_out_en;
+    wire [ADDR_WIDTH-1:0]  sram_out_addr;
 
-    // img_row, img_col, ker_row, ker_col
-    wire [ADDR_WIDTH-1:0] img_row, img_col, ker_row, ker_col;
-    reg [ADDR_WIDTH-1:0] img_row_reg, img_col_reg, ker_row_reg, ker_col_reg;
-
-    // mac_gen signals
-    wire [ NUM_CHANNELS_WIDTH - 1 : 0] num_macs_i;
-    reg [C_AXIS_TDATA_WIDTH * MAX_CHANNELS - 1 : 0] data_mac_i;
-    reg [C_AXIS_TDATA_WIDTH * MAX_CHANNELS - 1 : 0] weight_mac_i;
-    wire signed [ 2*C_AXIS_MDATA_WIDTH - 1 : 0] mac_out;
+    // convolution signals
+    wire signed [2*C_AXIS_MDATA_WIDTH - 1 : 0] mac_out;
     wire mac_valid_out;
-    wire mac_valid_in;
+    reg mac_valid_in;
 
-    // MAC result
-    wire [C_AXIS_TDATA_WIDTH*MAX_CHANNELS-1:0] mac_result;
-    // cur_img_row, cur_img_col
-    reg [ADDR_WIDTH-1:0] idx1_img, idx1_ker, idx1_out;
-    
-    // sram_img signals
-    wire [NUM_CHANNELS_WIDTH-1: 0]num_channels1_img_i,num_channels1_ker_i;
-    assign s00_axis_tready = s00_axis_tvalid;
-    reg last_data, last_data_reg;
-    reg we1_img_i_reg;
+    // output index control
+    wire [MAX_ADDR_WIDTH-1:0] idx1_out;
 
-    assign { img_row , img_col , num_channels1_img_i } = (s00_axis_tlast && state == LOAD_IMG)? 
-        MAX_CHANNELS : { s00_axis_tuser[2*ADDR_WIDTH + NUM_CHANNELS_WIDTH -1 : ADDR_WIDTH + NUM_CHANNELS_WIDTH] , s00_axis_tuser[ ADDR_WIDTH + NUM_CHANNELS_WIDTH -1 : NUM_CHANNELS_WIDTH] , s00_axis_tuser[NUM_CHANNELS_WIDTH -1 : 0] } ; // use for channel number 
-
-    // sram_ker signals
-    assign s00_axis_tready = s00_axis_tvalid;
-    reg we1_ker1_reg;
-    assign { ker_row , ker_col , num_channels1_ker_i } = (s00_axis_tlast && state == LOAD_KER)? 
-        MAX_CHANNELS : { s00_axis_tuser[2*ADDR_WIDTH + NUM_CHANNELS_WIDTH -1 : ADDR_WIDTH + NUM_CHANNELS_WIDTH] , s00_axis_tuser[ ADDR_WIDTH + NUM_CHANNELS_WIDTH -1 : NUM_CHANNELS_WIDTH] , s00_axis_tuser[NUM_CHANNELS_WIDTH -1 : 0] } ; // use for channel number 
-    
-    // output row and col
+    // output size
     wire [ADDR_WIDTH-1:0] out_row, out_col;
-    assign out_row = img_row_reg - ker_row_reg + 1;
-    assign out_col = img_col_reg - ker_col_reg + 1;
-
-    // convolution col and row index
-    reg [MAX_ADDR_WIDTH-1:0] conv_row;
-    reg [MAX_ADDR_WIDTH-1:0] conv_col;
-
-    
-
-// ****************************************************************************************************
-    reg [ADDR_WIDTH-1:0] read_idx;  
-    reg read_sram_enable;  
-    reg signed [2*C_AXIS_TDATA_WIDTH-1:0] axi4_data_out;  
-
-    // sram input and output signals
-
-    // assign axi4_data_out = data_out[MAX_DATA_WIDTH*ELEM0_SRAM_IDX +: 2*C_AXIS_MDATA_WIDTH];  
-    always @(*)begin
-        if(axi4_data_out !== data_out[ELEM0_SRAM_IDX * MAX_DATA_WIDTH +: 2*C_AXIS_TDATA_WIDTH])begin
-            axi4_data_out = data_out[ELEM0_SRAM_IDX * MAX_DATA_WIDTH +: 2*C_AXIS_TDATA_WIDTH];
-        end
-    end
-
-    always @(*)begin
-        if(m00_axis_tdata !== data_out[ELEM0_SRAM_IDX * MAX_DATA_WIDTH +: 2*C_AXIS_TDATA_WIDTH])begin
-            m00_axis_tdata = data_out[ELEM0_SRAM_IDX * MAX_DATA_WIDTH +: 2*C_AXIS_TDATA_WIDTH];
-        end
-    end
-    /***** AXI4-Stream 傳輸資料 *****/
-    reg stop = 0;
-    always @(posedge m00_axis_aclk) begin
-        if (!m00_axis_aresetn) begin
-            stop <= 0;
-        end else if (read_sram_enable && m00_axis_tready && !stop) begin
-            if (read_idx == (out_col * out_row- 1)) begin
-                stop <= 1;
-            end
-        end 
-    end
-
-    always @(posedge m00_axis_aclk) begin
-        if (!m00_axis_aresetn) begin
-            m00_axis_tlast <= 0;
-        end else if (read_sram_enable && m00_axis_tready && !stop) begin
-            if (read_idx == (out_col * out_row- 2)) begin
-                m00_axis_tlast <= 1;
-            end else begin
-                m00_axis_tlast <= 0;
-            end
-        end
-    end
-
-    always @(posedge m00_axis_aclk) begin
-        if (!m00_axis_aresetn) begin
-            m00_axis_tvalid <= 0;
-        end else if (read_sram_enable && m00_axis_tready && !stop) begin
-            if (read_idx == (out_col * out_row- 1)) begin
-                m00_axis_tvalid <= 0;  // stop
-            end else begin
-                m00_axis_tvalid <= 1;
-            end
-        end else begin
-            m00_axis_tvalid <= 0;  // 如果 AXI 不 ready，暫停傳輸
-        end
-    end
-
-    always @(posedge m00_axis_aclk) begin
-        if (!m00_axis_aresetn) begin
-            read_idx <= 0;
-        end else if (read_sram_enable && m00_axis_tready && !stop) begin
-            if (read_idx == (out_col * out_row- 1)) begin
-                read_idx <= 0;  // reset
-            end else begin
-                read_idx <= read_idx + 1;
-            end
-        end 
-    end
+    assign out_row = img_row - ker_row + 1;
+    assign out_col = img_col - ker_col + 1;
 
 
-    /***** 控制讀取 SRAM[0] 的啟動條件 *****/
-    always @(posedge s00_axis_aclk) begin
-        if (!s00_axis_aresetn) begin
-            read_sram_enable <= 0;
-        end else if (m00_axis_tready) begin
-            read_sram_enable <= 1;  // 啟用 SRAM[0] 的讀取
-        end else if (m00_axis_tlast) begin
-            read_sram_enable <= 0;  // 傳輸結束，停止讀取
-        end
-    end
+    // GEMM convolution index
+    wire [ADDR_WIDTH-1:0] conv_row;
+    wire [ADDR_WIDTH-1:0] conv_col;
+    wire [ADDR_WIDTH-1:0] for_conv_row;
+    wire [ADDR_WIDTH-1:0] for_conv_col;
 
 
+    // SRAM OUTPUT DATA
+    wire signed [MAX_DATA_WIDTH-1:0] gemm0_data_out;
+    wire signed [MAX_DATA_WIDTH-1:0] gemm1_data_out;
+    wire signed [2*MAX_DATA_WIDTH-1:0] elem_data_out;
+    wire signed [2*MAX_DATA_WIDTH-1:0] sram_data_out;
 
-// ****************************************************************************************************
 
-    // sram_img and sram_ker port2 for enable read sram
-    always @(*)begin
-        we = {NUM_SRAMS{1'b0}};
-        // if(s00_axis_tvalid & s00_axis_tready & (state==LOAD_IMG))begin
-        if((s00_axis_tvalid & s00_axis_tready && (ST_state==ST_IMG)))begin
-            we[GEMM0_SRAM_IDX] = 1'b1;
-        end
-        // if(s00_axis_tvalid & s00_axis_tready & (state==LOAD_KER))begin
-        if((s00_axis_tvalid & s00_axis_tready && (ST_state==ST_KER)))begin
-            we[GEMM1_SRAM_IDX] = 1'b1;
-        end
-        if(read_sram_enable)begin
-            we[ELEM0_SRAM_IDX] = 1'b0;
-        end else if(mac_valid_out)begin
-            we[ELEM0_SRAM_IDX] = 1'b1;
-        end
-    end
-
-    always @(*)begin
-        en = {NUM_SRAMS{1'b0}};
-        if(we[GEMM0_SRAM_IDX])begin
-            en[GEMM0_SRAM_IDX] = 1'b1;
-        end
-        if(we[GEMM1_SRAM_IDX])begin
-            en[GEMM1_SRAM_IDX] = 1'b1;
-        end
-        if(state == COMPUTE_CONV0)begin
-            en[GEMM0_SRAM_IDX] = 1'b1;
-            en[GEMM1_SRAM_IDX] = 1'b1;
-        end
-        if(mac_valid_out || read_sram_enable)begin
-            en[ELEM0_SRAM_IDX] = 1'b1;
-        end
-    end
-
-    // sram input address
-    reg [ADDR_WIDTH-1: 0] for_conv_row, for_conv_col;
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            for_conv_col <= 0;
-        end else if( state == COMPUTE_CONV0 && for_conv_col < ker_col_reg-1)begin
-            for_conv_col <= for_conv_col + 1;
-        end else if( state == COMPUTE_CONV0 && for_conv_col == ker_col_reg-1)begin
-            for_conv_col <= 0;
-        end else if (state == COMPUTE_CONV1) begin
-            for_conv_col <= 0;
-        end
-    end
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            for_conv_row <= 0;
-        end else if( state == COMPUTE_CONV0 && for_conv_col == ker_col_reg-1)begin
-            for_conv_row <= for_conv_row + 1;
-        end else if( state == COMPUTE_CONV1)begin
-            for_conv_row <= 0;
-        end
-    end
-
+    // control FSM
     always @(*) begin
-        addr = {NUM_SRAMS * MAX_ADDR_WIDTH{1'b0}};  // 初始化為 0
-
-        if(en[GEMM0_SRAM_IDX] && state == COMPUTE_CONV0) begin
-            addr[GEMM0_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = (conv_row + for_conv_row) * img_col_reg + conv_col + for_conv_col;
-        end else if(en[GEMM0_SRAM_IDX]) begin
-            addr[GEMM0_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = idx1_img;
-        end
-
-        if(en[GEMM1_SRAM_IDX] && state == COMPUTE_CONV0) begin
-            addr[GEMM1_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = for_conv_row * ker_col_reg + for_conv_col;
-        end else if(en[GEMM1_SRAM_IDX]) begin
-            addr[GEMM1_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = idx1_ker;
-        end
-
-        if(en[ELEM0_SRAM_IDX] && read_sram_enable)begin
-            addr[ELEM0_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = read_idx;
-        end else if(en[ELEM0_SRAM_IDX]) begin
-            addr[ELEM0_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = idx1_out;
-        end 
-        
-        // ********************** MODIFY
-        // if(m00_axis_tready && m00_axis_tvalid)begin
-        if(read_sram_enable)begin
-            addr[GEMM0_SRAM_IDX * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = read_idx;
-        end
-        // ********************** MODIFY
-    end
-    // sram input data
-    always @(*)begin
-        data_in = {NUM_SRAMS * MAX_DATA_WIDTH{1'b0}};
-        if(we[GEMM0_SRAM_IDX])begin
-            data_in[GEMM0_SRAM_IDX * MAX_DATA_WIDTH  +: C_AXIS_TDATA_WIDTH] =  s00_axis_tdata;
-        end
-        if(we[GEMM1_SRAM_IDX])begin
-            data_in[GEMM1_SRAM_IDX * MAX_DATA_WIDTH +: C_AXIS_TDATA_WIDTH] =  s00_axis_tdata;
-        end
-        if(mac_valid_out)begin
-            data_in[ELEM0_SRAM_IDX * MAX_DATA_WIDTH +: 2*C_AXIS_TDATA_WIDTH] = mac_out;
-        end
-    end
-
-    /* store img_row img_col */
-    always @(posedge s00_axis_aclk)begin
-        if(s00_axis_tlast && state == LOAD_IMG)begin
-            img_row_reg <= img_row;
-            img_col_reg <= img_col;
-        end
-    end
-
-    always @(posedge s00_axis_aclk)begin
-        if(s00_axis_tlast && state == LOAD_KER)begin
-            ker_row_reg <= ker_row;
-            ker_col_reg <= ker_col;
-        end
-    end
-    
-    /**** control input data signals ****/
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            last_data_reg <= 0;
-        end else begin
-            last_data_reg <= s00_axis_tlast;
-        end
-    end
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            last_data <= 0;
-        end else begin
-            last_data <= last_data_reg;
-            if(last_data_reg)begin
-                ST_state <= ST_state + 1;
-            end 
-        end
-    end
-
-    /***** FSM control *****/
-    always @(*)begin
-        case(state)
+        next_state = state;
+        case (state)
             IDLE: begin
-                if(s00_axis_tvalid && s00_axis_tready)begin
+                if (data_ready && data_type == GEMM0_SRAM_IDX)
                     next_state = LOAD_IMG;
-                end
             end
             LOAD_IMG: begin
-                if(last_data)begin
+                if (data_ready && data_type == GEMM1_SRAM_IDX)
                     next_state = LOAD_KER;
-                end
             end
             LOAD_KER: begin
-                if(last_data)begin
+                // assum that the data is ready
+                if (!data_ready)
                     next_state = COMPUTE_CONV0;
-                end
             end
-            // TODO: COMPUTE_CONV and WRITE_OUTPUT are not implemented yet
             COMPUTE_CONV0: begin
-                // next_state = COMPUTE_CONV;
-                if(conv_row == out_row)begin
-                    next_state = WRITE_OUTPUT;
-                end else if( (for_conv_col + ker_col_reg*for_conv_row) < ker_col_reg * ker_row_reg -1)begin
-                    next_state = COMPUTE_CONV0;
-                end else begin
+                if (conv_row >= out_row - 1 && conv_col >= out_col - 1 && for_conv_col >= ker_col)
+                    next_state = WAIT_LAST;
+                else if (for_conv_col == ker_col )
                     next_state = COMPUTE_CONV1;
-                end
+                else
+                    next_state = COMPUTE_CONV0;
             end
             COMPUTE_CONV1: begin
-                    next_state = COMPUTE_CONV0;
+                next_state = COMPUTE_CONV0;
+            end
+            WAIT_LAST: begin
+                if (mac_valid_out)
+                    next_state = WRITE_OUTPUT;
             end
             WRITE_OUTPUT: begin
-                if(read_idx < out_row * out_col)begin
-                    next_state = WRITE_OUTPUT;
-                end else begin
+                if (sram_out_addr >= out_row * out_col)begin
                     next_state = IDLE;
                 end
             end
@@ -363,106 +120,133 @@ module npu#
         endcase
     end
 
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
+    always @(posedge s00_axis_aclk) begin
+        if (!s00_axis_aresetn)
             state <= IDLE;
-        end else begin
+        else
             state <= next_state;
-        end
-    end
-    /***** FSM control *****/
-
-    /***** index control *****/
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn) begin
-            idx1_img <= 0;
-        end else if(we[GEMM0_SRAM_IDX]  )begin
-            idx1_img <= idx1_img + 1;
-        end
-    end
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn) begin
-            idx1_ker <= 0;
-        end else if(we[GEMM1_SRAM_IDX])begin
-            idx1_ker <= idx1_ker + 1;
-        end
-    end
-
-    /***** index control *****/
-
-    integer row,col,m,n,j;
-    /***** mac unit signals control *****/
-    assign num_macs_i = (state == COMPUTE_CONV1)? ker_row_reg * ker_col_reg : 0;
-    assign mac_valid_in = (state == COMPUTE_CONV1)? 1 : 0;
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            conv_col <= 0;
-        end else if (conv_col == out_col-1 && for_conv_row==ker_row_reg)begin
-            conv_col <= 0;
-        end else if(state == COMPUTE_CONV1)begin
-            conv_col <= conv_col + 1;
-        end
-    end
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            conv_row <= 0;
-        end else if(conv_col == out_col-1 && for_conv_row==ker_row_reg)begin
-            conv_row <= conv_row + 1;
-        end
-    end
-
-    always @(*)begin
-        if(state == COMPUTE_CONV0 || for_conv_col + for_conv_row * ker_col_reg <= ker_col_reg * ker_row_reg) begin
-            data_mac_i[(for_conv_row*ker_col_reg + for_conv_col -1)*C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = data_out[GEMM0_SRAM_IDX * MAX_DATA_WIDTH +: C_AXIS_TDATA_WIDTH];
-        end
-    end
-
-    always @(*)begin
-        if(state == COMPUTE_CONV0 || for_conv_col + for_conv_row * ker_col_reg <= ker_col_reg * ker_row_reg) begin
-            weight_mac_i[(for_conv_row*ker_col_reg + for_conv_col -1)*C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = data_out[GEMM1_SRAM_IDX * MAX_DATA_WIDTH +: C_AXIS_TDATA_WIDTH];
-        end
     end
 
 
-    /***** sram_output_idx *****/
-
-    always @(posedge s00_axis_aclk)begin
-        if(!s00_axis_aresetn)begin
-            idx1_out <= 0;
-        end else if(mac_valid_out)begin
-            idx1_out <= idx1_out + 1'b1;
-        end
-    end
-
-    /***** sram_output_idx *****/
-
-    multi_sram multi_sram_gen(
-        .clk(s00_axis_aclk),
-        .rst(s00_axis_aresetn),
-        .en(en),
-        .we(we),
-        .addr(addr),
-        .data_in(data_in),
-        .data_out(data_out)
-    );
-
-    mac #
+    convolution #
     (
-        .MAX_MACS(MAX_MACS)
+        .MAX_MACS(MAX_MACS),
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(C_AXIS_TDATA_WIDTH)
     )
-    mac_gen(
+    (
         .clk(s00_axis_aclk),
         .rst(s00_axis_aresetn),
-        .num_macs_i(num_macs_i),
-        .valid_in(mac_valid_in),
-        .data(data_mac_i),
-        .weight(weight_mac_i),
+        .en(state == COMPUTE_CONV0),
+        // input metadata
+        .img_row(img_row),
+        .img_col(img_col),
+        .ker_row(ker_row),
+        .ker_col(ker_col),
+        // img and kernel data
+        .data_in(gemm0_data_out),
+        .weight_in(gemm1_data_out),
+        // output signal control
+        .mac_valid_out(mac_valid_out),
         .mac_out(mac_out),
-        .valid_out(mac_valid_out)
+        // output metadata
+        .conv_row(conv_row),
+        .conv_col(conv_col),
+        .for_conv_row(for_conv_row),
+        .for_conv_col(for_conv_col),
+        .idx1_out(idx1_out)
     );
-    
+
+
+    axi_stream_input #
+    (
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(C_AXIS_TDATA_WIDTH),
+        .NUM_CHANNELS_WIDTH(NUM_CHANNELS_WIDTH)
+    )
+    axi_stream_input_inst
+    (
+        .s_axis_aclk(s00_axis_aclk),
+        .s_axis_aresetn(s00_axis_aresetn),
+        .s_axis_tdata(s00_axis_tdata),
+        .s_axis_tstrb(s00_axis_tstrb),
+        .s_axis_tvalid(s00_axis_tvalid),
+        .s_axis_tready(s00_axis_tready),
+        .s_axis_tlast(s00_axis_tlast),
+        .s_axis_tuser(s00_axis_tuser),
+        .write_enable(write_enable),
+        .write_address(write_address),
+        .write_data(write_data),
+        .data_type(data_type),
+        .data_ready(data_ready),
+        .img_row(img_row),
+        .img_col(img_col),
+        .ker_row(ker_row),
+        .ker_col(ker_col),
+        .num_channels(num_channels)
+    );
+
+
+    axi_stream_output #
+    (
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(C_AXIS_MDATA_WIDTH),
+        .NUM_CHANNELS_WIDTH(NUM_CHANNELS_WIDTH)
+    )
+    axi_stream_output_inst
+    (
+        .m_axis_aclk(m00_axis_aclk),
+        .m_axis_aresetn(m00_axis_aresetn),
+        .m_axis_tdata(m00_axis_tdata),
+        // .m_axis_tstrb(m00_axis_tstrb),
+        .m_axis_tvalid(m00_axis_tvalid),
+        .m_axis_tready(m00_axis_tready),
+        .m_axis_tlast(m00_axis_tlast),
+        .m_axis_tuser(m00_axis_tuser),
+        // SRAM interface
+        .sram_out_en(sram_out_en),
+        .sram_out_addr(sram_out_addr),
+        .sram_out_data_out(sram_data_out),
+        // control signals
+        .start_output(state == WRITE_OUTPUT),
+        .out_size(out_row * out_col)
+    );
+
+    sram_controller
+    (
+        .clk(s00_axis_aclk),
+        .rst(s00_axis_aresetn),
+        // GEMM1 port
+        .gemm1_addr((conv_row + for_conv_row) * img_col + conv_col + for_conv_col),
+        .gemm1_data_in(),
+        .gemm1_en(state == COMPUTE_CONV0),
+        .gemm1_we(1'b0),
+        .gemm1_idx(GEMM0_SRAM_IDX),
+        .gemm1_data_out(gemm0_data_out),
+        // GEMM2 port
+        .gemm2_addr(for_conv_row * ker_col + for_conv_col),
+        .gemm2_data_in(),
+        .gemm2_en(state == COMPUTE_CONV0),
+        .gemm2_we(1'b0),
+        .gemm2_idx(GEMM1_SRAM_IDX),
+        .gemm2_data_out(gemm1_data_out),
+        // ELEM port
+        .elem_addr(idx1_out),
+        .elem_data_in(mac_out),
+        .elem_en(mac_valid_out),
+        .elem_we(mac_valid_out),
+        .elem_idx(ELEM0_SRAM_IDX),
+        .elem_data_out(elem_data_out),
+        // axi4 input port
+        .write_address(write_address),
+        .write_data(write_data),
+        .axi_idx(data_type),
+        .write_enable(write_enable),
+        // axi4 output port
+        .sram_out_en(sram_out_en),
+        .sram_out_idx(ELEM0_SRAM_IDX),
+        .sram_out_addr(sram_out_addr),
+        .sram_out_data(sram_data_out)
+    );
 
 endmodule

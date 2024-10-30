@@ -188,7 +188,7 @@ begin
 
     integer idx = 0;
     total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
-    @(posedge m00_axis_aclk);
+    @(negedge m00_axis_aclk);
     m00_axis_tready = 1;
     // while (!m00_axis_tvalid) begin
     //     $display("Waiting for valid output");
@@ -261,7 +261,8 @@ begin
     // $display("%s", "exit3");
     send_weight();
     // $display("%s", "exit4");
-    # (PERIOD * 3300000);  // Wait for NPU processing
+    // m00_axis_tready = 1;
+    // # (PERIOD * 3300000);  // Wait for NPU processing
     // wait(m00_axis_tvalid);
     check_output();      // 檢查 SRAM[0] 中的資料
     // check_sram_data();

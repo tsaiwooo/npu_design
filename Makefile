@@ -5,11 +5,12 @@ RTL_DIR = RTL
 TESTBENCH_DIR = testbench
 
 # Define design module
-DESIGN_FILE = sram_dp.v
-TESTBENCH_FILE = tb_sram_dp.v
+DESIGN_FILE = npu.v
+TESTBENCH_FILE = tb_npu.v
 
 # Define source files
-DESIGN_SRC = $(RTL_DIR)/$(DESIGN_FILE)
+DESIGN_SRC = $(RTL_DIR)/$(DESIGN_FILE) $(RTL_DIR)/multi_sram.v $(RTL_DIR)/mac.v $(RTL_DIR)/sram.v $(RTL_DIR)/axi_stream_output.v $(RTL_DIR)/axi_stream_input.v $(RTL_DIR)/convolution.v $(RTL_DIR)/sram_controller.v
+# DESIGN_ALL = $(RTL_DIR)/*.v
 TB_SRC = $(TESTBENCH_DIR)/$(TESTBENCH_FILE)
 
 # Define output files
@@ -42,7 +43,7 @@ all: clean compile simulate
 # Compile the design and testbench
 compile:
 	@echo "Compiling design and testbench..."
-	$(VCS) $(VCS_FLAGS) $(INC_FLAGS) $(DEFINE_FLAGS) $(DESIGN_SRC) $(TB_SRC) -o $(SIMV)
+	$(VCS) $(VCS_FLAGS) $(INC_FLAGS) $(DEFINE_FLAGS) $(DESIGN_SRC)  $(TB_SRC) -o $(SIMV)
 
 # Run the simulation
 simulate: compile
@@ -52,13 +53,13 @@ simulate: compile
 # View the waveform in Verdi
 verdi:
 	@echo "Launching Verdi..."
-	echo "$(DESIGN_SRC)" > filelist.f
+	echo "$(DESIGN_SRC) " > filelist.f
 	echo "$(TB_SRC)" >> filelist.f
 	$(VERDI) $(VERDI_FLAGS) -ssf $(VERDI_DUMP) -f filelist.f &
 
 # Clean up intermediate and output files
 clean:
 	@echo "Cleaning up..."
-	rm -rf csrc DVEfiles simv.daidir ucli.key $(SIMV) $(VCS_DUMP) $(VERDI_DUMP) *.log *.vpd *.vcd filelist.f tmp_dir_*
+	rm -rf csrc DVEfiles simv.daidir ucli.key $(SIMV) $(VCS_DUMP) $(VERDI_DUMP) *.log *.vpd *.vcd filelist.f tmp_dir_* verdi.fsdb.*
 
 .PHONY: all compile simulate verdi clean

@@ -9,8 +9,9 @@ localparam LOAD_IMG         = 1;
 localparam LOAD_KER         = 2;
 localparam COMPUTE_CONV0 = 3;
 localparam COMPUTE_CONV1 = 4;
+localparam WAIT_LAST = 5;
 // localparam ACTIVATION   = 3'd4;
-localparam WRITE_OUTPUT = 5;
+localparam WRITE_OUTPUT = 6;
 
 // for multi_sram paramaters        
 localparam NUM_SRAMS = 8;

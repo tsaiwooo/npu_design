@@ -126,67 +126,67 @@ endgenerate
 // Select the final summation result based on the number of MACs
 always @(posedge clk or posedge rst) begin
     if (valid_pipeline[0] && macs == 1) begin
-        sum_result <= mac_result[0];
+        mac_out <= mac_result[0];
     end else if (valid_pipeline[0] && macs <= 2) begin
-        sum_result <= sum_stage_1[0];
+        mac_out <= sum_stage_1[0];
     end else if (valid_pipeline[0] && macs <= 4) begin
-        sum_result <= sum_stage_2[0];
+        mac_out <= sum_stage_2[0];
     end else if (valid_pipeline[0] && macs <= 8) begin
-        sum_result <= sum_stage_3[0];
+        mac_out <= sum_stage_3[0];
     end else if (valid_pipeline[0] && macs <= 16) begin
-        sum_result <= sum_stage_4[0];
+        mac_out <= sum_stage_4[0];
     end else if (valid_pipeline[0] && macs <= 32) begin
-        sum_result <= sum_stage_5[0];
+        mac_out <= sum_stage_5[0];
     end  else if (valid_pipeline[0] && macs <= 64) begin
-        sum_result <= sum_stage_6[0];
+        mac_out <= sum_stage_6[0];
     end else begin
-        sum_result <= 0;
+        mac_out <= 0;
     end
 end
 
 // control result_out signal
-always @(posedge clk or posedge rst) begin
-    if (!rst) begin
-        result_out <= 0;
-    end else begin
-        // result_out <= 0; // Reset result_out each cycle
-        if (valid_pipeline[0] && macs == 1) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 2) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 4) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 8) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 16) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 32) begin
-            result_out <= 1;
-        end else if (valid_pipeline[0] && macs <= 64) begin
-            result_out <= 1;
-        end else begin
-            result_out <= 0;
-        end
-    end
-end
+// always @(posedge clk or posedge rst) begin
+//     if (!rst) begin
+//         result_out <= 0;
+//     end else begin
+//         // result_out <= 0; // Reset result_out each cycle
+//         if (valid_pipeline[0] && macs == 1) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 2) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 4) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 8) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 16) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 32) begin
+//             result_out <= 1;
+//         end else if (valid_pipeline[0] && macs <= 64) begin
+//             result_out <= 1;
+//         end else begin
+//             result_out <= 0;
+//         end
+//     end
+// end
 
 
 // Output logic
-always @(posedge clk or posedge rst) begin
-    if (!rst) begin
-        mac_out <= 0;
-    end
-    else if (result_out && valid_pipeline[1]) begin
-        mac_out <= sum_result;
-    end
-end
+// always @(posedge clk or posedge rst) begin
+//     if (!rst) begin
+//         mac_out <= 0;
+//     end
+//     else if (valid_pipeline[0]) begin
+//         mac_out <= sum_result;
+//     end
+// end
 
 // control valid out
 always @(posedge clk or posedge rst)begin
     if (!rst)begin
         valid_out <= 0;
     end else begin
-        valid_out <= valid_pipeline[1];
+        valid_out <= valid_pipeline[0];
     end
 end
 

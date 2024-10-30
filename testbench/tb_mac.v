@@ -1,7 +1,9 @@
+`timescale 1ns / 1ps
+
 module tb_mac();
 
     // mac Parameters
-    parameter PERIOD      = 10;
+    parameter PERIOD      = 20;
     parameter MAX_MACS    = 64;
     parameter DATA_WIDTH  = 8;
 
@@ -87,9 +89,10 @@ module tb_mac();
             end
 
             // Set valid_in to 1 to start processing
-            @(posedge clk);
+            @(negedge clk);  // 在下一次上升沿前設置 valid_in
             valid_in = 1;
             
+
             // Wait for result to be computed
             cycle_count = 0;
             start_flag = 0;
@@ -101,6 +104,9 @@ module tb_mac();
                     start_cycle = cycle_count;
                     start_flag = 1;
                 end
+                // while (!valid_out) begin
+                //     @(posedge clk);
+                // end
                 if (valid_out && !result_checked) begin
                     end_cycle = cycle_count;
                     expected_result = 0;

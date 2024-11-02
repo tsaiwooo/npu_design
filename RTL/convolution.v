@@ -47,35 +47,78 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             conv_row <= 0;
-            conv_col <= 0;
-            for_conv_row <= 0;
-            for_conv_col <= 0;
-            idx1_out <= 0;
         end else if (en) begin
             if (for_conv_row < ker_row - 1 || for_conv_col < ker_col - 1) begin
-                if (for_conv_col < ker_col - 1) begin
-                    for_conv_col <= for_conv_col + 1;
-                end else begin
-                    for_conv_col <= 0;
-                    if (for_conv_row < ker_row - 1) begin
-                        for_conv_row <= for_conv_row + 1;
-                    end
-                end
-            end else if(for_conv_row == ker_row-1 && for_conv_col == ker_col-1) begin
-                for_conv_col <= for_conv_col + 1;
+                conv_row <= conv_row;  // Hold current value
+            end else if (for_conv_row == ker_row - 1 && for_conv_col == ker_col - 1) begin
+                conv_row <= conv_row;  // Hold current value
             end else begin
-                for_conv_row <= 0;
-                for_conv_col <= 0;
                 if (conv_col < out_col - 1) begin
-                    conv_col <= conv_col + 1;
+                    conv_row <= conv_row;
                 end else begin
-                    conv_col <= 0;
                     if (conv_row < out_row - 1) begin
                         conv_row <= conv_row + 1;
                     end else begin
                         conv_row <= 0;
                     end
                 end
+            end
+        end
+    end
+
+    // conv_col Logic
+    always @(posedge clk) begin
+        if (!rst) begin
+            conv_col <= 0;
+        end else if (en) begin
+            if (for_conv_row < ker_row - 1 || for_conv_col < ker_col - 1) begin
+                conv_col <= conv_col;  // Hold current value
+            end else if (for_conv_row == ker_row - 1 && for_conv_col == ker_col - 1) begin
+                conv_col <= conv_col;  // Hold current value
+            end else begin
+                if (conv_col < out_col - 1) begin
+                    conv_col <= conv_col + 1;
+                end else begin
+                    conv_col <= 0;
+                end
+            end
+        end
+    end
+
+    // for_conv_row Logic
+    always @(posedge clk) begin
+        if (!rst) begin
+            for_conv_row <= 0;
+        end else if (en) begin
+            if (for_conv_row < ker_row - 1 || for_conv_col < ker_col - 1) begin
+                if (for_conv_col < ker_col - 1) begin
+                    for_conv_row <= for_conv_row;  // Hold current value
+                end else if (for_conv_row < ker_row - 1) begin
+                    for_conv_row <= for_conv_row + 1;
+                end
+            end else if (for_conv_row == ker_row - 1 && for_conv_col == ker_col - 1) begin
+                for_conv_row <= for_conv_row;  // Hold current value
+            end else begin
+                for_conv_row <= 0;  // Reset when kernel traversal is complete
+            end
+        end
+    end
+
+    // for_conv_col Logic
+    always @(posedge clk) begin
+        if (!rst) begin
+            for_conv_col <= 0;
+        end else if (en) begin
+            if (for_conv_row < ker_row - 1 || for_conv_col < ker_col - 1) begin
+                if (for_conv_col < ker_col - 1) begin
+                    for_conv_col <= for_conv_col + 1;
+                end else begin
+                    for_conv_col <= 0;
+                end
+            end else if (for_conv_row == ker_row - 1 && for_conv_col == ker_col - 1) begin
+                for_conv_col <= for_conv_col + 1;
+            end else begin
+                for_conv_col <= 0;  // Reset after reaching kernel boundaries
             end
         end
     end
@@ -93,23 +136,46 @@ module convolution #
 
 
 
+    // control data_mac_i
     always @(posedge clk) begin
         if (!rst || !en) begin
             data_mac_i <= 0;
-            weight_mac_i <= 0;
-            data_count <= 0;
         end else if (en) begin
             integer idx;
             idx = for_conv_row * ker_col + for_conv_col;
             if (idx && idx <= total_macs) begin
                 data_mac_i[(idx-1) * DATA_WIDTH +: DATA_WIDTH] <= data_in;
+            end
+        end
+    end
+
+    // control weight_mac_i
+    always @(posedge clk) begin
+        if (!rst || !en) begin
+            weight_mac_i <= 0;
+        end else if (en) begin
+            integer idx;
+            idx = for_conv_row * ker_col + for_conv_col;
+            if (idx && idx <= total_macs) begin
                 weight_mac_i[(idx-1) * DATA_WIDTH +: DATA_WIDTH] <= weight_in;
+            end
+        end
+    end
+
+    // control data_count
+    always @(posedge clk) begin
+        if (!rst || !en) begin
+            data_count <= 0;
+        end else if (en) begin
+            integer idx;
+            idx = for_conv_row * ker_col + for_conv_col;
+            if (idx && idx <= total_macs) begin
                 data_count <= data_count + 1;
             end
         end
     end
 
-    // 控制结果索引
+    // control output index
     always @(posedge clk) begin
         if (!rst) begin
             idx1_out <= 0;

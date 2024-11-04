@@ -54,7 +54,6 @@ module npu #
     // convolution signals
     wire signed [2*C_AXIS_MDATA_WIDTH - 1 : 0] mac_out;
     wire mac_valid_out;
-    reg mac_valid_in;
 
     // output index control
     wire [MAX_ADDR_WIDTH-1:0] idx1_out;
@@ -70,13 +69,14 @@ module npu #
     wire [ADDR_WIDTH-1:0] conv_col;
     wire [ADDR_WIDTH-1:0] for_conv_row;
     wire [ADDR_WIDTH-1:0] for_conv_col;
+    wire [ADDR_WIDTH-1:0] weight_idx;
 
 
     // SRAM OUTPUT DATA
-    wire signed [MAX_DATA_WIDTH-1:0] gemm0_data_out;
-    wire signed [MAX_DATA_WIDTH-1:0] gemm1_data_out;
-    wire signed [2*MAX_DATA_WIDTH-1:0] elem_data_out;
-    wire signed [2*MAX_DATA_WIDTH-1:0] sram_data_out;
+    wire signed [SRAM_WIDTH_O-1:0] gemm0_data_out;
+    wire signed [SRAM_WIDTH_O-1:0] gemm1_data_out;
+    wire signed [SRAM_WIDTH_O-1:0] elem_data_out;
+    wire signed [SRAM_WIDTH_O-1:0] sram_data_out;
 
 
     // control FSM
@@ -97,12 +97,13 @@ module npu #
                     next_state = COMPUTE_CONV0;
             end
             COMPUTE_CONV0: begin
-                if (conv_row >= out_row - 1 && conv_col >= out_col - 1 && for_conv_col >= ker_col)
+                if (conv_row >= out_row - 1 && conv_col >= out_col - 1 && for_conv_row == ker_row) begin
                     next_state = WAIT_LAST;
-                else if (for_conv_col == ker_col )
+                end else if (for_conv_row == ker_row ) begin
                     next_state = COMPUTE_CONV1;
-                else
+                end else begin
                     next_state = COMPUTE_CONV0;
+                end
             end
             COMPUTE_CONV1: begin
                 next_state = COMPUTE_CONV0;
@@ -154,6 +155,7 @@ module npu #
         .conv_col(conv_col),
         .for_conv_row(for_conv_row),
         .for_conv_col(for_conv_col),
+        .weight_idx_o(weight_idx),
         .idx1_out(idx1_out)
     );
 
@@ -224,7 +226,7 @@ module npu #
         .gemm1_idx(GEMM0_SRAM_IDX),
         .gemm1_data_out(gemm0_data_out),
         // GEMM2 port
-        .gemm2_addr(for_conv_row * ker_col + for_conv_col),
+        .gemm2_addr(weight_idx),
         .gemm2_data_in(),
         .gemm2_en(state == COMPUTE_CONV0),
         .gemm2_we(1'b0),

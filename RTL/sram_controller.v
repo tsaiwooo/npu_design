@@ -12,7 +12,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input  gemm1_en,
     input  gemm1_we,
     input [NUM_SRAMS-1:0] gemm1_idx,
-    output signed [2*C_AXIS_TDATA_WIDTH-1:0] gemm1_data_out,
+    output signed [SRAM_WIDTH_O-1:0] gemm1_data_out,
 
     // GEMM2 port
     input [MAX_ADDR_WIDTH-1:0] gemm2_addr,
@@ -20,7 +20,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input  gemm2_en,
     input  gemm2_we,
     input [NUM_SRAMS-1:0] gemm2_idx,
-    output signed [2*C_AXIS_TDATA_WIDTH-1:0] gemm2_data_out,
+    output signed [SRAM_WIDTH_O-1:0] gemm2_data_out,
     
     // ELEM port
     input [MAX_ADDR_WIDTH-1:0] elem_addr,
@@ -28,7 +28,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input  elem_en,
     input  elem_we,
     input [NUM_SRAMS-1:0] elem_idx,
-    output signed [2*C_AXIS_TDATA_WIDTH-1:0] elem_data_out,
+    output signed [SRAM_WIDTH_O-1:0] elem_data_out,
 
     // axi4 input port
     input [MAX_ADDR_WIDTH-1:0] write_address,
@@ -40,14 +40,14 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input sram_out_en,
     input [NUM_SRAMS-1:0] sram_out_idx,
     input [MAX_ADDR_WIDTH-1:0] sram_out_addr,
-    output signed [2*C_AXIS_TDATA_WIDTH-1:0] sram_out_data
+    output signed [SRAM_WIDTH_O-1:0] sram_out_data
 );
     reg [NUM_SRAMS-1:0] en;
     reg [NUM_SRAMS-1:0] we;
     reg [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr;
     reg [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_in;
-    wire [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_out;
-    reg signed [MAX_DATA_WIDTH-1:0] each_data_out[NUM_SRAMS];
+    wire [NUM_SRAMS * SRAM_WIDTH_O - 1 : 0] data_out;
+    reg signed [SRAM_WIDTH_O-1:0] each_data_out[NUM_SRAMS];
 
     assign gemm1_data_out = each_data_out[gemm1_idx];
     assign gemm2_data_out = each_data_out[gemm2_idx];
@@ -57,7 +57,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     integer i;
     always @(*)begin
         for(i = 0; i < NUM_SRAMS; i = i + 1)begin
-            each_data_out[i] = data_out[i * MAX_DATA_WIDTH +: MAX_DATA_WIDTH];
+            each_data_out[i] = data_out[i * SRAM_WIDTH_O +: SRAM_WIDTH_O];
         end
     end
 

@@ -11,7 +11,7 @@ TESTBENCH_FILE = xxx.v
 - support signed dynamic macs, which means that input and weight can use 1~64 macs to calculate
 
 ## sram
-- use multi-sram, 且每一個都存不同運算的result
+- use multi-sram, 且每一個都存不同運算的result, read sram給一個address, 吐出64bits資料, 所以根據sram input data_width, 可能一次有8, 4, 2筆資料 
 
 
 ## stage
@@ -26,3 +26,7 @@ TESTBENCH_FILE = xxx.v
 ### stage3
 - 要concurrent做運算, 也就是部份convolution做完後elemen-wize開始拿result運算, convolution繼續做且存到另一個buffer等等
 - tb_npu3 
+
+## FURURE WORK
+- 看sram bandwidth 是否能增大, 一次拿多筆資料增加throughput
+- 或是使用multi-bank, 獨立的

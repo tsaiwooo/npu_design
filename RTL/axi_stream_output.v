@@ -18,7 +18,7 @@ module axi_stream_output #
     // sram control interface
     output reg                    sram_out_en,
     output reg [ADDR_WIDTH-1:0]   sram_out_addr,
-    input  wire signed [2*DATA_WIDTH-1:0] sram_out_data_out,
+    input  wire signed [SRAM_WIDTH_O-1:0] sram_out_data_out,
 
     // control_signals
     input  wire                   start_output,
@@ -59,11 +59,11 @@ module axi_stream_output #
     // Control m_axis_tdata
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
-            m_axis_tdata <= {2*DATA_WIDTH{1'b0}};
+            m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
         end else if (start_condition && data_ready) begin
-            m_axis_tdata <= sram_out_data_out;
+            m_axis_tdata <= $signed(sram_out_data_out[2*DATA_WIDTH-1:0]);
         end else begin
-            m_axis_tdata <= {2*DATA_WIDTH{1'b0}};
+            m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
         end
     end
 

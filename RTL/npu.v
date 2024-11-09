@@ -129,16 +129,18 @@ module npu #
     end
 
 
-    convolution #
+    GEMM #
     (
         .MAX_MACS(MAX_MACS),
         .ADDR_WIDTH(ADDR_WIDTH),
         .DATA_WIDTH(C_AXIS_TDATA_WIDTH)
     )
+    GEMM_inst
     (
         .clk(s00_axis_aclk),
         .rst(s00_axis_aresetn),
-        .en(state == COMPUTE_CONV0),
+        // convolution signals
+        .convolution_en(state == COMPUTE_CONV0),
         // input metadata
         .img_row(img_row),
         .img_col(img_col),

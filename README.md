@@ -7,12 +7,31 @@ desing NPU which MAC unit and elementwize engine can run concurrently
 DESIGN_FILE = xxx.v
 TESTBENCH_FILE = xxx.v
 ```
-## Mac unit
+
+## Module introduction
+### GEMM
+- 各種需要用到MAC unit的運算會在這裡, ex: conv, fully connected etc.
+
+### element-wize 
+- 各種非GEMM運算, ex: exp, reciprocal, add etc.
+
+### Mac unit
 - support signed dynamic macs, which means that input and weight can use 1~64 macs to calculate
 
-## sram
+### sram
 - use multi-sram, 且每一個都存不同運算的result, read sram給一個address, 吐出64bits資料, 所以根據sram input data_width, 可能一次有8, 4, 2筆資料 
 
+### sram controller
+- 整理各個sram input and output的訊號, 透過sram controller去跟sram溝通 
+
+### MultiplyByQuantizedMultiplier
+- 32bits input 乘上quantized_multiplier, 然後再透過shift做量化縮放
+
+### RoundingDivideByPOT
+- 對32bits input 除以$2^{exponent}$ 並且計算是否需要四捨五入(rounding arithmetic right shift)
+
+### exp
+- pipeline exp運算
 
 ## stage
 ### stage1

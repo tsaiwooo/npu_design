@@ -25,129 +25,160 @@
 `timescale 1ns / 1ps
 `include "params.vh"
 
-
 module MultiplyByQuantizedMultiplier
 (
     input clk,
     input rst,
     input [31:0] x,
     input [31:0] quantized_multiplier,
-    input  signed [31:0] shift,
+    input signed [31:0] shift,
     input input_valid,
     output reg output_valid,
     output reg [31:0] x_mul_by_quantized_multiplier
 );
-    localparam IDLE = 0, LOAD = 1, 
-               SaturatingRoundingDoublingHighMul_1 = 2, 
-               SaturatingRoundingDoublingHighMul_2 = 3,
-               RoundingDivideByPOT_1 = 4,
-               RoundingDivideByPOT_2 = 5,
-               OUTPUT = 6;
 
-    reg [3:0] state, next_state;
-    reg [31:0] x_reg, quantized_multiplier_reg, shift_reg;
-    reg signed [63:0] ab_64; 
-    reg signed [31:0] ab_x2_high32;
-    reg [31:0] nudge;
-    reg [31:0] left_shift, right_shift;
-    reg [31:0] remainder, threshold;
-    wire overflow;
+    // Pipeline stage valid signals
+    reg valid_stage1, valid_stage2, valid_stage3, valid_stage4;
 
-    // calculate left_shift and right_shift
-    assign left_shift = (shift > 0) ? shift : 0;
-    assign right_shift = (shift > 0) ? 0 : -shift;
-    assign overflow = (x_reg == quantized_multiplier_reg && x_reg == 32'h80000000);
+    // Pipeline registers for input and intermediate values
+    reg [31:0] x_reg_s1, quantized_multiplier_reg_s1;
+    reg [31:0] left_shift_s1, right_shift_s1, right_shift_s2, right_shift_s3, right_shift_s4;
+    reg signed [63:0] ab_64_s1, ab_64_s2;
+    reg overflow_s1, overflow_s2, overflow_s3;
+    reg [31:0] nudge_s3;
+    reg signed [31:0] ab_x2_high32_s3, ab_x2_high32_s4;
+    reg [31:0] remainder_s4, threshold_s4;
 
-    // FSM
-    always @(*) begin
-        case (state)
-            IDLE: next_state = (input_valid) ? LOAD : IDLE;
-            LOAD: next_state = SaturatingRoundingDoublingHighMul_1;
-            SaturatingRoundingDoublingHighMul_1: next_state = SaturatingRoundingDoublingHighMul_2;
-            SaturatingRoundingDoublingHighMul_2: next_state = RoundingDivideByPOT_1;
-            RoundingDivideByPOT_1: next_state = RoundingDivideByPOT_2;
-            RoundingDivideByPOT_2: next_state = OUTPUT;
-            OUTPUT: next_state = IDLE;
-            default: next_state = IDLE;
-        endcase
+    // Combinational logic for shift calculation
+    wire [31:0] left_shift_wire, right_shift_wire;
+    assign left_shift_wire = (shift > 0) ? shift : 0;
+    assign right_shift_wire = (shift > 0) ? 0 : -shift;
+
+    // Stage 1: Input registration and initial multiplication
+    always @(posedge clk) begin
+        if (!rst) valid_stage1 <= 0;
+        else valid_stage1 <= input_valid;
     end
 
     always @(posedge clk) begin
-        if (!rst)
-            state <= IDLE;
-        else
-            state <= next_state;
+        if (!rst) x_reg_s1 <= 0;
+        else if (input_valid) x_reg_s1 <= x;
     end
 
-    // input_valid
     always @(posedge clk) begin
-        if (!rst) begin
-            x_reg <= 0;
-            quantized_multiplier_reg <= 0;
-            shift_reg <= 0;
-        end else if (input_valid) begin
-            x_reg <= x;
-            quantized_multiplier_reg <= quantized_multiplier;
-            shift_reg <= shift;
+        if (!rst) quantized_multiplier_reg_s1 <= 0;
+        else if (input_valid) quantized_multiplier_reg_s1 <= quantized_multiplier;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) left_shift_s1 <= 0;
+        else if (input_valid) left_shift_s1 <= left_shift_wire;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) right_shift_s1 <= 0;
+        else if (input_valid) right_shift_s1 <= right_shift_wire;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) ab_64_s1 <= 0;
+        else if (input_valid) ab_64_s1 <= x * (1 << left_shift_wire);
+    end
+
+    always @(posedge clk) begin
+        if (!rst) overflow_s1 <= 0;
+        else if (input_valid) overflow_s1 <= (x == quantized_multiplier && x == 32'h80000000);
+    end
+
+    // Stage 2: Multiplication with quantized_multiplier
+    always @(posedge clk) begin
+        if (!rst) valid_stage2 <= 0;
+        else valid_stage2 <= valid_stage1;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) ab_64_s2 <= 0;
+        else if (valid_stage1) ab_64_s2 <= ab_64_s1 * quantized_multiplier_reg_s1;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) overflow_s2 <= 0;
+        else if (valid_stage1) overflow_s2 <= overflow_s1;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) right_shift_s2 <= 0;
+        else if (valid_stage1) right_shift_s2 <= right_shift_s1;
+    end
+
+    // Stage 3: Nudge calculation and high 32 bits extraction
+    always @(posedge clk) begin
+        if (!rst) valid_stage3 <= 0;
+        else valid_stage3 <= valid_stage2;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) nudge_s3 <= 0;
+        else if (valid_stage2) nudge_s3 <= (ab_64_s2 >= 0) ? (1 << 30) : (1 - (1 << 30));
+    end
+
+    always @(posedge clk) begin
+        if (!rst) ab_x2_high32_s3 <= 0;
+        else if (valid_stage2) ab_x2_high32_s3 <= overflow_s2 ? 32'h7FFFFFFF : ((ab_64_s2 + nudge_s3) >>> 31);
+    end
+
+    always @(posedge clk) begin
+        if (!rst) overflow_s3 <= 0;
+        else if (valid_stage2) overflow_s3 <= overflow_s2;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) right_shift_s3 <= 0;
+        else if (valid_stage2) right_shift_s3 <= right_shift_s2;
+    end
+
+    // Stage 4: Remainder and threshold calculation
+    always @(posedge clk) begin
+        if (!rst) valid_stage4 <= 0;
+        else valid_stage4 <= valid_stage3;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) remainder_s4 <= 0;
+        else if (valid_stage3) remainder_s4 <= ab_x2_high32_s3 & ((1 << right_shift_s3) - 1);
+    end
+
+    always @(posedge clk) begin
+        if (!rst) threshold_s4 <= 0;
+        else if (valid_stage3) threshold_s4 <= (((1 << right_shift_s3) - 1) >> 1) + ((ab_x2_high32_s3 < 0) ? 1 : 0);
+    end
+
+    always @(posedge clk) begin
+        if (!rst) ab_x2_high32_s4 <= 0;
+        else if (valid_stage3) ab_x2_high32_s4 <= ab_x2_high32_s3;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) right_shift_s4 <= 0;
+        else if (valid_stage3) right_shift_s4 <= right_shift_s3;
+    end
+
+    // Stage 5: Final calculation and output
+    always @(posedge clk) begin
+        if (!rst) output_valid <= 0;
+        else output_valid <= valid_stage4;
+    end
+
+    always @(posedge clk) begin
+        if (!rst) x_mul_by_quantized_multiplier <= 0;
+        else if (valid_stage4) begin
+            x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4);
+            if (remainder_s4 > threshold_s4 || 
+                (remainder_s4 == threshold_s4 && 
+                 (ab_x2_high32_s4 & 1) && 
+                 ab_x2_high32_s4 != 32'h7FFFFFFF)) begin
+                x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4) + 1;
+            end
         end
     end
-
-    // FSM control
-    always @(posedge clk) begin
-        if (!rst) begin
-            ab_64 <= 0;
-            nudge <= 0;
-            ab_x2_high32 <= 0;
-            remainder <= 0;
-            threshold <= 0;
-            output_valid <= 0;
-            x_mul_by_quantized_multiplier <= 0;
-        end else begin
-            case (state)
-                LOAD: begin
-                    // 1.  x * (1 << left_shift)
-                    ab_64 <= x_reg * (1 << left_shift);
-                end
-                SaturatingRoundingDoublingHighMul_1: begin
-                    // 2. overflow
-                    // if (overflow) begin
-                    //     ab_64 <= 32'h7FFFFFFF;  // max
-                    //     $display("in unit test Overflow detected---------------------------------------");
-                    // end
-                    // else
-                        ab_64 <= ab_64 * quantized_multiplier_reg;  // mul by quantized_multiplier
-                end
-                SaturatingRoundingDoublingHighMul_2: begin
-                    // 3. calculate nudge 
-                    nudge <= (ab_64 >= 0) ? (1 << 30) : (1 - (1 << 30));
-                    ab_x2_high32 <= overflow? 32'h7FFFFFFF : (ab_64 + nudge) >> 31;
-                end
-                RoundingDivideByPOT_1: begin
-                    // 5.1 check right_shift is valid
-                    if (right_shift >= 0 && right_shift <= 31) begin
-                        // 5.2 calculate remainder and threshold
-                        remainder <= ab_x2_high32 & ((1 << right_shift) - 1);
-                        threshold <= ((1 << right_shift) - 1) >> 1;
-                        if (ab_x2_high32 < 0)
-                            threshold <= threshold + 1;
-                    end
-                end
-                RoundingDivideByPOT_2: begin
-                    // 6. operation q = ab_x2_high32 >> right_shift + ((remainder > threshold) || (remainder == threshold && (ab_x2_high32 & 1)))
-                    x_mul_by_quantized_multiplier <= (ab_x2_high32 >> right_shift);
-                    if (remainder > threshold || 
-                        (remainder == threshold && (ab_x2_high32 & 1) && ab_x2_high32 != 32'h7fffffff))
-                        x_mul_by_quantized_multiplier <= x_mul_by_quantized_multiplier + 1;
-                end
-                OUTPUT: begin
-                    // output valid
-                    output_valid <= 1;
-                end
-                default: begin
-                    output_valid <= 0;
-                end
-            endcase
-        end
-    end
-
 endmodule

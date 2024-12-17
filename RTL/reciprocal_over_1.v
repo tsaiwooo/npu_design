@@ -260,13 +260,7 @@ module reciprocal_over_1(
                     end
                 end
             end
-            always @(posedge clk) begin
-                if(!rst) begin
-                    xi_pipeline[0] <= 0;
-                end else if (valid_pipeline[3 + 3 * g_i]) begin
-                    xi_pipeline[1] <= xi[g_i];
-                end
-            end
+
 
             always @(posedge clk or negedge rst) begin
                 if (!rst) begin

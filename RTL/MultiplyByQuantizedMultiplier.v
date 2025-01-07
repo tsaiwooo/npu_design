@@ -29,30 +29,35 @@ module MultiplyByQuantizedMultiplier
 (
     input clk,
     input rst,
-    input [31:0] x,
-    input [31:0] quantized_multiplier,
+    input signed [31:0] x,
+    input signed [31:0] quantized_multiplier,
     input signed [31:0] shift,
     input input_valid,
     output reg output_valid,
-    output reg [31:0] x_mul_by_quantized_multiplier
+    output reg signed [7:0] x_mul_by_quantized_multiplier
 );
-
+    // reg signed [7:0] x_mul_by_quantized_multiplier;
+    localparam signed [7:0] NEG_128 = -128;
+    localparam signed [7:0] POS_127 =  127;
     // Pipeline stage valid signals
     reg valid_stage1, valid_stage2, valid_stage3, valid_stage4;
 
     // Pipeline registers for input and intermediate values
-    reg [31:0] x_reg_s1, quantized_multiplier_reg_s1;
-    reg [31:0] left_shift_s1, right_shift_s1, right_shift_s2, right_shift_s3, right_shift_s4;
-    reg signed [63:0] ab_64_s1, ab_64_s2;
+    reg signed [31:0] x_reg_s1, quantized_multiplier_reg_s1;
+    reg signed [31:0] left_shift_s1, right_shift_s1, right_shift_s2, right_shift_s3, right_shift_s4;
+    reg signed [63:0] ab_64_s1, ab_64_s2, ab_64_s3;
     reg overflow_s1, overflow_s2, overflow_s3;
-    reg [31:0] nudge_s3;
+    reg signed [31:0] nudge_s3;
     reg signed [31:0] ab_x2_high32_s3, ab_x2_high32_s4;
-    reg [31:0] remainder_s4, threshold_s4;
+    reg  [31:0] remainder_s4, threshold_s4;
 
     // Combinational logic for shift calculation
     wire [31:0] left_shift_wire, right_shift_wire;
     assign left_shift_wire = (shift > 0) ? shift : 0;
     assign right_shift_wire = (shift > 0) ? 0 : -shift;
+
+    // right_shift > 0, 判斷是否overflow
+    reg [1:0] right_shift_overflow_s3, right_shift_overflow_s4;
 
     // Stage 1: Input registration and initial multiplication
     always @(posedge clk) begin
@@ -122,9 +127,14 @@ module MultiplyByQuantizedMultiplier
         else if (valid_stage2) nudge_s3 <= (ab_64_s2 >= 0) ? (1 << 30) : (1 - (1 << 30));
     end
 
+    // always @(posedge clk) begin
+    //     if (!rst) ab_x2_high32_s3 <= 0;
+    //     else if (valid_stage2) ab_x2_high32_s3 <= overflow_s2 ? 32'h7FFFFFFF : ((ab_64_s2 + nudge_s3) >>> 31);
+    // end
+
     always @(posedge clk) begin
-        if (!rst) ab_x2_high32_s3 <= 0;
-        else if (valid_stage2) ab_x2_high32_s3 <= overflow_s2 ? 32'h7FFFFFFF : ((ab_64_s2 + nudge_s3) >>> 31);
+        if (!rst) ab_64_s3 <= 0;
+        else if(valid_stage2) ab_64_s3 <= ab_64_s2;
     end
 
     always @(posedge clk) begin
@@ -137,7 +147,31 @@ module MultiplyByQuantizedMultiplier
         else if (valid_stage2) right_shift_s3 <= right_shift_s2;
     end
 
+    // 檢查是否overflow
+    wire [63:0] NEG_128_SHIFT = NEG_128 <<< right_shift_s2;
+    wire [63:0] POS_127_SHIFT = POS_127 <<< right_shift_s2;
+
+    always @(posedge clk)begin
+        if(!rst) right_shift_overflow_s3 <= 0;
+        else if(valid_stage2)begin
+            if(right_shift_s2 > 0)begin
+                if($signed(ab_64_s2) < $signed(NEG_128_SHIFT))begin
+                    right_shift_overflow_s3 <= 2'd1;
+                end else if($signed(ab_64_s2) > $signed(POS_127_SHIFT))begin
+                    right_shift_overflow_s3 <= 2'd2;
+                end else begin
+                    right_shift_overflow_s3 <= 2'd0;
+                end
+            end else begin
+                right_shift_overflow_s3 <= 0;
+            end
+        end
+    end
+
     // Stage 4: Remainder and threshold calculation
+    wire signed [31:0] ab_x3_high32;
+    assign ab_x3_high32 = overflow_s3 ? 32'h7FFFFFFF : ((ab_64_s3 + nudge_s3) >>> 31);
+
     always @(posedge clk) begin
         if (!rst) valid_stage4 <= 0;
         else valid_stage4 <= valid_stage3;
@@ -145,17 +179,17 @@ module MultiplyByQuantizedMultiplier
 
     always @(posedge clk) begin
         if (!rst) remainder_s4 <= 0;
-        else if (valid_stage3) remainder_s4 <= ab_x2_high32_s3 & ((1 << right_shift_s3) - 1);
+        else if (valid_stage3) remainder_s4 <= ab_x3_high32 & ((1 << right_shift_s3) - 1);
     end
 
     always @(posedge clk) begin
         if (!rst) threshold_s4 <= 0;
-        else if (valid_stage3) threshold_s4 <= (((1 << right_shift_s3) - 1) >> 1) + ((ab_x2_high32_s3 < 0) ? 1 : 0);
+        else if (valid_stage3) threshold_s4 <= (((1 << right_shift_s3) - 1) >> 1) + ((ab_x3_high32 < 0) ? 1 : 0);
     end
 
     always @(posedge clk) begin
         if (!rst) ab_x2_high32_s4 <= 0;
-        else if (valid_stage3) ab_x2_high32_s4 <= ab_x2_high32_s3;
+        else if (valid_stage3) ab_x2_high32_s4 <= ab_x3_high32;
     end
 
     always @(posedge clk) begin
@@ -163,21 +197,46 @@ module MultiplyByQuantizedMultiplier
         else if (valid_stage3) right_shift_s4 <= right_shift_s3;
     end
 
+    always @(posedge clk) begin
+        if(!rst) right_shift_overflow_s4 <= 0;
+        else if(valid_stage3) begin
+            right_shift_overflow_s4 <= right_shift_overflow_s3;
+        end
+    end
     // Stage 5: Final calculation and output
     always @(posedge clk) begin
         if (!rst) output_valid <= 0;
         else output_valid <= valid_stage4;
     end
-
+    
+    wire signed [31:0] tmp_result;
+    assign tmp_result = (ab_x2_high32_s4 >>> right_shift_s4);
     always @(posedge clk) begin
         if (!rst) x_mul_by_quantized_multiplier <= 0;
         else if (valid_stage4) begin
-            x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4);
-            if (remainder_s4 > threshold_s4 || 
-                (remainder_s4 == threshold_s4 && 
-                 (ab_x2_high32_s4 & 1) && 
-                 ab_x2_high32_s4 != 32'h7FFFFFFF)) begin
-                x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4) + 1;
+            if(right_shift_overflow_s4 == 2'd2)begin
+                x_mul_by_quantized_multiplier <= POS_127;
+            end else if(right_shift_overflow_s4 == 2'd1)begin
+                x_mul_by_quantized_multiplier <= NEG_128;
+            end else begin 
+                // x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4);
+                // tmp_result = (ab_x2_high32_s4 >>> right_shift_s4);
+                if (remainder_s4 > threshold_s4 || 
+                    (remainder_s4 == threshold_s4 && 
+                    (ab_x2_high32_s4 & 1) && 
+                    ab_x2_high32_s4 != 32'h7FFFFFFF)) begin
+                    // x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4) + 1;
+                    x_mul_by_quantized_multiplier <= (tmp_result >= $signed(POS_127))? POS_127 : 
+                                                    (tmp_result < $signed(NEG_128))? NEG_128 : tmp_result + 1;
+                
+                // Saturate the result to 8-bit signed integer
+                end else if(tmp_result > POS_127)begin
+                    x_mul_by_quantized_multiplier <= POS_127;
+                end else if(tmp_result < NEG_128)begin
+                    x_mul_by_quantized_multiplier <= NEG_128;
+                end else begin
+                    x_mul_by_quantized_multiplier <= tmp_result;
+                end
             end
         end
     end

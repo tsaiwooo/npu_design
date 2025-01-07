@@ -15,10 +15,10 @@ localparam WRITE_OUTPUT = 6;
 
 // for multi_sram paramaters        
 localparam NUM_SRAMS = 8;
-localparam int DATA_WIDTHS[0:NUM_SRAMS-1] = '{8, 8, 8, 8, 16, 16, 32, 32};
+localparam int DATA_WIDTHS[0:NUM_SRAMS-1] = '{8, 8, 8, 8, 8, 16, 32, 32};
 localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{262144, 262144, 262144, 262144, 
                                             262144, 262144, 65536, 65536};
-localparam GEMM0_SRAM_IDX = 0, GEMM1_SRAM_IDX=1, GEMM2_SRAM_IDX=2, GEMM3_SRAM_IDX=3, ELEM0_SRAM_IDX=4, ELEM1_SRAM_IDX=5, DEQUANT0_SRAM_IDX=6, DEQUANT1_SRAM_IDX=7;
+localparam [7:0] GEMM0_SRAM_IDX = 0, GEMM1_SRAM_IDX=1, GEMM2_SRAM_IDX=2, GEMM3_SRAM_IDX=3, ELEM0_SRAM_IDX=4, ELEM1_SRAM_IDX=5, DEQUANT0_SRAM_IDX=6, DEQUANT1_SRAM_IDX=7;
 localparam MAX_ADDR_WIDTH = 18; 
 localparam MAX_DATA_WIDTH = 32;
 

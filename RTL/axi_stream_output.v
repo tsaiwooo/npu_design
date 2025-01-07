@@ -9,7 +9,7 @@ module axi_stream_output #
 (
     input  wire                   m_axis_aclk,
     input  wire                   m_axis_aresetn,
-    output reg signed [2*DATA_WIDTH-1:0]  m_axis_tdata,
+    output reg signed [DATA_WIDTH-1:0]  m_axis_tdata,
     output reg                    m_axis_tvalid,
     input  wire                   m_axis_tready,
     output reg                    m_axis_tlast,
@@ -17,7 +17,7 @@ module axi_stream_output #
 
     // sram control interface
     output reg                    sram_out_en,
-    output reg [ADDR_WIDTH-1:0]   sram_out_addr,
+    output reg [MAX_ADDR_WIDTH-1:0]   sram_out_addr,
     input  wire signed [SRAM_WIDTH_O-1:0] sram_out_data_out,
 
     // control_signals
@@ -25,10 +25,10 @@ module axi_stream_output #
     input  wire [MAX_ADDR_WIDTH-1:0]  out_size
 );
 
-    reg [ADDR_WIDTH-1:0] read_counter;
+    reg [MAX_ADDR_WIDTH-1:0] read_counter;
     reg                  output_done;
     reg                  data_valid_reg;  
-    reg [ADDR_WIDTH-1:0] prefetch_addr; 
+    reg [MAX_ADDR_WIDTH-1:0] prefetch_addr; 
 
     wire data_ready = data_valid_reg && (m_axis_tready || !m_axis_tvalid);
     wire reset_condition = !m_axis_aresetn;
@@ -48,11 +48,12 @@ module axi_stream_output #
     // Control sram_out_addr
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
-            sram_out_addr <= {ADDR_WIDTH{1'b0}};
+            sram_out_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && (data_ready || !data_valid_reg)) begin
             sram_out_addr <= prefetch_addr;
+            $display("sram_out_addr: %d, data = %h", sram_out_addr, sram_out_data_out);
         end else begin
-            sram_out_addr <= {ADDR_WIDTH{1'b0}};
+            sram_out_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end
     end
 
@@ -61,7 +62,7 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
         end else if (start_condition && data_ready) begin
-            m_axis_tdata <= $signed(sram_out_data_out[2*DATA_WIDTH-1:0]);
+            m_axis_tdata <= $signed(sram_out_data_out[DATA_WIDTH-1:0]);
         end else begin
             m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
         end
@@ -109,15 +110,15 @@ module axi_stream_output #
     // Control read_counter
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
-            read_counter <= {ADDR_WIDTH{1'b0}};
+            read_counter <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && data_ready) begin
             if (read_counter < (out_size - 1)) begin
                 read_counter <= read_counter + 1;
             end else begin
-                read_counter <= {ADDR_WIDTH{1'b0}};
+                read_counter <= {MAX_ADDR_WIDTH{1'b0}};
             end
         end else begin
-            read_counter <= {ADDR_WIDTH{1'b0}};
+            read_counter <= {MAX_ADDR_WIDTH{1'b0}};
         end
     end
 
@@ -152,11 +153,11 @@ module axi_stream_output #
     // Control prefetch_addr
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
-            prefetch_addr <= {ADDR_WIDTH{1'b0}};
+            prefetch_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && (data_ready || !data_valid_reg)) begin
             prefetch_addr <= prefetch_addr + 1;
         end else begin
-            prefetch_addr <= {ADDR_WIDTH{1'b0}};
+            prefetch_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end
     end
 

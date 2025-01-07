@@ -17,6 +17,7 @@ TESTBENCH_FILE = xxx.v
 
 ### Mac unit
 - support signed dynamic macs, which means that input and weight can use 1~64 macs to calculate
+- 最多一次支援8組資料做運算 -> 增加pe使用率
 
 ### sram
 - use multi-sram, 且每一個都存不同運算的result, read sram給一個address, 吐出64bits資料, 所以根據sram input data_width, 可能一次有8, 4, 2筆資料 
@@ -25,13 +26,16 @@ TESTBENCH_FILE = xxx.v
 - 整理各個sram input and output的訊號, 透過sram controller去跟sram溝通 
 
 ### MultiplyByQuantizedMultiplier
-- 32bits input 乘上quantized_multiplier, 然後再透過shift做量化縮放
+- 32bits input 乘上quantized_multiplier, 然後再透過shift做量化縮放, output是32bits, 最後出去再看是否超過int8上下限, 再把值域縮放到int8
 
 ### RoundingDivideByPOT
 - 對32bits input 除以$2^{exponent}$ 並且計算是否需要四捨五入(rounding arithmetic right shift)
 
 ### exp
-- pipeline exp運算
+- pipeline exp運算泰勒展開式
+
+### reciprocal
+- pipeline運算, 使用 Newton–Raphson division (https://en.wikipedia.org/wiki/Newton%27s_method), 支援Q1.1.30 ~ Q1.4.27 且必須 >1
 
 ## stage
 ### stage1
@@ -39,8 +43,8 @@ TESTBENCH_FILE = xxx.v
 - 使用tb_npu
 
 ### stage2 
-- 新增一個element-wise engine, 做完convolution後element-wize再拿sram[GEMM0_SRAM_IDX]的資料做運算再傳到sram[GEMM1_SRAM_IDX]
-- tb_npu_2
+- 新增一個element-wise engine, 做完convolution(使用multi-set mac)後做requant存至sram[GEMM0_SRAM_IDX]
+- tb_npu_1
 
 ### stage3
 - 要concurrent做運算, 也就是部份convolution做完後elemen-wize開始拿result運算, convolution繼續做且存到另一個buffer等等

@@ -24,7 +24,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     
     // ELEM port
     input [MAX_ADDR_WIDTH-1:0] elem_addr,
-    input signed [2*C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
+    input signed [4*C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
     input  elem_en,
     input  elem_we,
     input [NUM_SRAMS-1:0] elem_idx,
@@ -33,7 +33,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     // axi4 input port
     input [MAX_ADDR_WIDTH-1:0] write_address,
     input [C_AXIS_TDATA_WIDTH-1:0] write_data,
-    input axi_idx,
+    input [2:0] axi_idx,
     input write_enable,
 
     // axi4 output port
@@ -71,7 +71,8 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
         end
         if(elem_we)begin
             we[elem_idx] = 1'b1;
-            $display("Writing mac data to SRAM, address = %d, data = %d", elem_addr, elem_data_in);
+            if(elem_addr < 4'd10)
+                $display("Writing mac data to SRAM, address = %d, data = %d", elem_addr, elem_data_in);
         end
         if(write_enable)begin
             we[axi_idx] = 1'b1;
@@ -134,13 +135,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     end
     
     // control SRAM
-    multi_sram #
-    (
-        .NUM_SRAMS(NUM_SRAMS),
-        .ADDR_WIDTH(MAX_ADDR_WIDTH),
-        .DATA_WIDTH(MAX_DATA_WIDTH)
-    )
-    multi_sram_gen (
+    multi_sram  multi_sram_gen (
         .clk(clk),
         .rst(rst),
         .en(en),

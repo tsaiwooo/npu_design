@@ -17,7 +17,8 @@ module mac#
     input       [MAX_MACS*DATA_WIDTH-1:0]    data,  
     input       [MAX_MACS*DATA_WIDTH-1:0]    weight,
     output reg signed [MAX_GROUPS*4*DATA_WIDTH-1:0]       mac_out, 
-    output reg                               valid_out 
+    output reg                               valid_out,
+    output reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_o
 );
 
 reg signed [2*DATA_WIDTH-1:0] mac_result[0:MAX_MACS-1];
@@ -30,7 +31,26 @@ reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_reg;
 
 integer group_idx, pe_idx;
 
+// pipeline register for num_groups
+reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_pipeline[0:1];
 
+always @(posedge clk)begin
+    if(!rst)begin
+        num_groups_pipeline[0] <= 0;
+        num_groups_pipeline[1] <= 0;
+    end else begin
+        num_groups_pipeline[0] <= num_groups;
+        num_groups_pipeline[1] <= num_groups_pipeline[0];
+    end
+end
+
+always @(posedge clk)begin
+    if(!rst)begin
+        num_groups_o = 0;
+    end else begin
+        num_groups_o = num_groups_pipeline[0];
+    end
+end
 
 always @(*)begin
     if(!rst)begin

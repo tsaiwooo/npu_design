@@ -43,13 +43,57 @@ TESTBENCH_FILE = xxx.v
 - 使用tb_npu
 
 ### stage2 
-- 新增一個element-wise engine, 做完convolution(使用multi-set mac)後做requant存至sram[GEMM0_SRAM_IDX]
-- tb_npu_1
+- 新增一個element-wise engine, 做完convolution(使用multi-set mac)後做requant存至sram[GEMM0_SRAM_IDX], 然後convolution到requant中間使用一個FIFO
+- tb_npu1
 
 ### stage3
-- 要concurrent做運算, 也就是部份convolution做完後elemen-wize開始拿result運算, convolution繼續做且存到另一個buffer等等
+- convolution + requant(vector), 中間會先dequant再做運算然後存到sram[GEMM0_SRAM_IDX], requant使用vector(bandwidth: 8)
+- tb_npu2
+
+### stage4
+- convolution + requant + exp, 接上element-wise的運算, 中間會先dequant再做運算然後存到sram[GEMM0_SRAM_IDX]
 - tb_npu3 
 
 ## FURURE WORK
 - 看sram bandwidth 是否能增大, 一次拿多筆資料增加throughput
-- 或是使用multi-bank, 獨立的
+- 或是使用multi-bank, 
+
+## Logistic in tflm
+```c=
+inline void Logistic(int32_t input_zero_point, int32_t input_range_radius,
+                     int32_t input_multiplier, int32_t input_left_shift,
+                     int32_t input_size, const int8_t* input_data,
+                     int8_t* output_data) {
+  // Integer bits must be in sync with Prepare() function.
+  static constexpr int32_t kInputIntegerBits = 4;
+  static constexpr int32_t kOutputIntegerBits = 8;
+  static constexpr int8_t kMinInt8 = std::numeric_limits<int8_t>::min();
+  static constexpr int8_t kMaxInt8 = std::numeric_limits<int8_t>::max();
+  static constexpr int32_t kOutputZeroPoint = -128;
+
+  for (int i = 0; i < input_size; ++i) {
+    const int32_t input =
+        static_cast<int32_t>(input_data[i]) - input_zero_point;
+    if (input <= -input_range_radius) {
+      output_data[i] = kMinInt8;
+    } else if (input >= input_range_radius) {
+      output_data[i] = kMaxInt8;
+    } else {
+      const int32_t input_in_q4 = MultiplyByQuantizedMultiplier(
+          input, input_multiplier, input_left_shift);
+      using FixedPoint4 = gemmlowp::FixedPoint<int32_t, kInputIntegerBits>;
+      const int32_t output_in_q0 =
+          gemmlowp::logistic(FixedPoint4::FromRaw(input_in_q4)).raw();
+
+      // Rescale and downcast.
+      using gemmlowp::RoundingDivideByPOT;
+      int32_t output_in_q23 =
+          RoundingDivideByPOT(output_in_q0, 31 - kOutputIntegerBits);
+      output_in_q23 = std::min(std::max(output_in_q23 + kOutputZeroPoint,
+                                        static_cast<int32_t>(kMinInt8)),
+                               static_cast<int32_t>(kMaxInt8));
+      output_data[i] = static_cast<int8_t>(output_in_q23);
+    }
+  }
+}
+```

@@ -1,12 +1,16 @@
 `include "params.vh"
 `timescale 1ns / 1ps
 
-module multi_sram
+module multi_sram #
+(
+    parameter ADDR_WIDTH = 13,
+    parameter INT8_WIDTH = 8
+)
 (
     input wire clk,
     input wire rst,
-    input wire [NUM_SRAMS-1:0] en,
-    input wire [NUM_SRAMS-1:0] we,
+    input wire [7:0] en,
+    input wire [7:0] we,
     input wire [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr,  
     input wire [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_in,
     output wire [NUM_SRAMS * SRAM_WIDTH_O - 1 : 0] data_out
@@ -14,9 +18,13 @@ module multi_sram
 
 
     // Intermediate wires to connect each SRAM's inputs and outputs
-    wire signed [MAX_DATA_WIDTH-1:0] sram_data_in[0:NUM_SRAMS-1];
+    wire signed [INT8_WIDTH-1:0] sram_data_in[0:NUM_SRAMS-1];
     wire [SRAM_WIDTH_O-1:0] sram_data_out[0:NUM_SRAMS-1];
+`ifndef synthesis
     wire [MAX_ADDR_WIDTH-1:0] sram_addr[0:NUM_SRAMS-1];
+`else
+    wire [6:0] sram_addr[0:NUM_SRAMS-1];
+`endif
 
     genvar i;
     generate

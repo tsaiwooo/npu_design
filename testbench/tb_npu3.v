@@ -1,9 +1,6 @@
 `timescale 1ns / 1ps
-// Modify: 
-// 1. Last cycle錯了 應該提早一個cycle
-// 2. weight那邊有問題, 只收到8個而已
-// 3. 
-module tb_npu1();
+
+module tb_npu3();
 
 //----------------------------------------------
 // 1) Parameters
@@ -39,6 +36,7 @@ reg signed [C_AXIS_TDATA_WIDTH-1:0] weight_buffer [0:2**ADDR_WIDTH-1];
 // (B) 新增：保存「卷積尚未 Requant」(累加) 與「Requant 後」的預期值
 reg signed [31:0] sum_before_requant [0:2**ADDR_WIDTH-1];  // Requant 前的累加
 reg signed [C_AXIS_MDATA_WIDTH-1:0] expected_output [0:2**ADDR_WIDTH-1]; // Requant 後的結果
+reg signed [31:0] exp_output [0:2**ADDR_WIDTH-1]; // dequant+exp 後的結果
 
 //----------------------------------------------
 // 4) Inputs to NPU
@@ -52,18 +50,23 @@ reg   [2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser = 0;
 reg   m00_axis_aclk    = 1'b0;
 reg   m00_axis_aresetn = 1;
 reg   m00_axis_tready  = 0;
+reg   [31:0] input_range_radius = 480;
+reg   signed [31:0] input_zero_point = -3;
+reg   signed [31:0] input_left_shift = 22;
+reg   signed [31:0] input_multiplier = 1591541760;
 
 //----------------------------------------------
 // 5) Requant 參數 (TB 中固定值)
 //----------------------------------------------
-reg [31:0]  test_q_multiplier = 32'h40000000; // 1.0
-reg signed [31:0] test_shift  = 3;       // -12 -> 右移12bits
+reg [31:0]  test_q_multiplier = 32'd1388164317; 
+reg signed [31:0] test_shift  = -9;
 
 //----------------------------------------------
 // 6) Outputs from NPU
 //----------------------------------------------
 wire  s00_axis_tready;
-wire  signed [C_AXIS_MDATA_WIDTH-1:0] m00_axis_tdata;
+wire  signed [8*C_AXIS_MDATA_WIDTH-1:0] m00_axis_tdata;
+wire [7:0]  m00_axis_tstrb;
 wire  m00_axis_tvalid;
 wire  m00_axis_tlast;
 wire  [NUM_CHANNELS_WIDTH-1:0] m00_axis_tuser;
@@ -86,7 +89,7 @@ end
 //----------------------------------------------
 initial begin
     $fsdbDumpfile("verdi.fsdb");
-    $fsdbDumpvars(0, tb_npu1, "+all");
+    $fsdbDumpvars(0, tb_npu3, "+all");
 end
 
 //----------------------------------------------
@@ -127,10 +130,15 @@ npu #(
     .m00_axis_tvalid(m00_axis_tvalid),
     .m00_axis_tlast(m00_axis_tlast),
     .m00_axis_tuser(m00_axis_tuser),
-    .m00_axis_tstrb(),
+    .m00_axis_tstrb(m00_axis_tstrb),
     // Requant
     .quantized_multiplier(test_q_multiplier),
     .shift(test_shift),
+    // dequant signals
+    .input_range_radius(input_range_radius),
+    .input_zero_point(input_zero_point),
+    .input_left_shift(input_left_shift),
+    .input_multiplier(input_multiplier),
     // cycle count for calculation
     .cycle_count(cycle_count)
 );
@@ -205,7 +213,7 @@ endtask
 // 14) TB 端的 do_requant function
 //----------------------------------------------
 // Golden Model for reference calculation
-function signed [7:0] golden_multiply_by_quantized_multiplier(
+function signed [31:0] golden_multiply_by_quantized_multiplier(
     input signed [31:0] x,
     input [31:0] quantized_multiplier,
     input signed [31:0] shift
@@ -214,7 +222,7 @@ function signed [7:0] golden_multiply_by_quantized_multiplier(
     reg [31:0] remainder, threshold;
     reg [31:0] left_shift, right_shift;
     reg signed [31:0] ab_x2_high32;
-    reg signed [31:0] nudge;
+    reg signed [30:0] nudge;
     reg [31:0] mask;
     reg overflow;
     reg signed [31:0] tmp_golden;
@@ -249,15 +257,16 @@ function signed [7:0] golden_multiply_by_quantized_multiplier(
             tmp_golden = ab_x2_high32 >> right_shift;
             // $display("golden_multiply_by_quantized_multiplier = %h", tmp_golden);
             if (remainder > threshold || 
-                (remainder == threshold && (ab_x2_high32 & 1) && ab_x2_high32 != 32'h7fffffff))
+                (remainder == threshold && (ab_x2_high32 & 1) && ab_x2_high32 != 32'h7fffffff)) begin
                     golden_multiply_by_quantized_multiplier = (tmp_golden >= $signed(POS_127))? POS_127:
                                                                (tmp_golden < $signed(NEG_128))? NEG_128: tmp_golden + 1;
-            else if(tmp_golden > 127)
-                golden_multiply_by_quantized_multiplier = 127;
-            else if(tmp_golden < -128)
-                golden_multiply_by_quantized_multiplier = -128;
-            else
+            // else if(tmp_golden > 127)
+            //     golden_multiply_by_quantized_multiplier = 127;
+            // else if(tmp_golden < -128)
+            //     golden_multiply_by_quantized_multiplier = -128;
+            end else begin
                 golden_multiply_by_quantized_multiplier = tmp_golden;
+            end
         end
     end
 endfunction
@@ -270,6 +279,7 @@ endfunction
 task compute_convolution;
 begin
     reg signed [4*C_AXIS_MDATA_WIDTH-1:0] sum;
+    reg signed [31:0] tmp_result;
     integer out_rows, out_cols;
     integer idx;
 
@@ -290,69 +300,150 @@ begin
             // [A] 紀錄「requant前」的 sum
             sum_before_requant[idx] = sum;
             // [B] 透過 tb_do_requant計算 "expected_output"
-            expected_output[idx]    = golden_multiply_by_quantized_multiplier(sum, test_q_multiplier, test_shift);
+            tmp_result = golden_multiply_by_quantized_multiplier(sum, test_q_multiplier, test_shift);
+            expected_output[idx] = (tmp_result > 127)? $signed(POS_127):
+                         (tmp_result < -128)? $signed(NEG_128): tmp_result;
+            // expected_output[idx]    = tmp_result;
         end
     end
 end
 endtask
 
 //----------------------------------------------
-// 16) Check output & Compare
+// 16) Compute dequant and exp: 
+//     - Dequant => exp_pipeline => feed pipeline
+//----------------------------------------------
+
+wire output_valid_exp;
+reg input_valid_exp;
+reg signed [31:0] dequant_val;
+wire signed [31:0] exp_x;
+task compute_exp_after_requant;
+    integer idx;
+    integer total_elements;
+    reg signed [31:0] requant_minus_zero_point;
+begin
+    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
+
+    for(idx = 0; idx < total_elements; idx = idx + 1) begin
+        // [A] Dequant
+        // $display("idx = %d, original_data = %d", idx, expected_output[idx]);
+        requant_minus_zero_point = expected_output[idx] - input_zero_point;
+        if(requant_minus_zero_point >= $signed(input_range_radius)) begin
+            exp_output[idx] = $signed(POS_127);
+            $display("idx = %d, requant_minus_zero_point = %d in  1", idx,requant_minus_zero_point);
+        end else if(requant_minus_zero_point <= $signed(-input_range_radius)) begin
+            exp_output[idx] = $signed(NEG_128);
+            $display("idx = %d, requant_minus_zero_point = %d in 2",idx,requant_minus_zero_point);
+        end else begin
+            dequant_val = golden_multiply_by_quantized_multiplier(requant_minus_zero_point, 
+                            input_multiplier, input_left_shift);
+            // $display("dequant_val = %h", dequant_val);
+            // [B] exp_pipeline
+            @(negedge s00_axis_aclk);
+            input_valid_exp = 1;
+            @(negedge s00_axis_aclk);
+            input_valid_exp = 0;
+
+            wait(output_valid_exp);
+            $display("exp_x = %h", exp_x);
+            exp_output[idx] = exp_x;
+        end
+
+    end
+
+end
+endtask
+
+// Instantiate exp_pipeline module
+exp_pipeline exp_inst(
+    .clk(s00_axis_aclk),
+    .rst(s00_axis_aresetn),
+    .x(dequant_val),
+    .integer_bits(4'd4),  // Q4.27 format
+    .input_valid(input_valid_exp),
+    .exp_x(exp_x),
+    .output_valid(output_valid_exp)
+);
+
+//----------------------------------------------
+// 17) Check output & Compare
 //     - 一併印出 "requant前的值", "expected", "got"
 //----------------------------------------------
 task check_output;
-begin
     integer total_elements;
-    integer idx = 0;
-
+    integer idx;                // 用於指示期望輸出數組的索引
+    integer byte_idx;           // 用於遍歷每個位元組
+    reg [63:0] received_data;   // 用於儲存當前周期接收到的64位數據
+    reg [7:0]  received_strb;   // 用於儲存位元組使能信號
+    reg [7:0]  received_byte;   // 臨時儲存提取的有效位元組
+begin
     total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
+    idx = 0;
+    
     @(negedge m00_axis_aclk);
     m00_axis_tready = 1;
-
-    // 等待輸出有效
+    
+    // 等待第一個有效輸出
     wait(m00_axis_tvalid);
 
-    while (m00_axis_tvalid) begin
+    while (m00_axis_tvalid && idx < total_elements) begin
         @(posedge m00_axis_aclk);
-
-        if (idx >= total_elements) begin
-            $display("Warning: output data more than expected. idx=%d", idx);
+        
+        // 讀取當前周期的數據和位元組使能
+        received_data = m00_axis_tdata;
+        received_strb = m00_axis_tstrb;
+        
+        // 遍歷每個位元組，檢查哪些位元組有效
+        for_loop : for (byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+            // if (received_strb[byte_idx]) begin
+            if (byte_idx < m00_axis_tstrb) begin
+                // 提取有效位元組
+                received_byte = received_data[byte_idx*8 +: 8];
+                
+                // 比較有效位元組與預期輸出
+                // if (received_byte !== expected_output[idx]) begin
+                if (received_byte !== exp_output[idx][7:0]) begin
+                    $display("Mismatch at element %d, byte %d: expected=%h, got=%h", 
+                             idx, byte_idx, exp_output[idx][7:0], received_byte);
+                    $finish;
+                end else begin
+                    $display("Match at element %d, byte %d: %h", idx, byte_idx, received_byte);
+                end
+                
+                idx = idx + 1; // 每處理一個有效位元組，移動到下一個預期元素
+                if(idx >= total_elements) 
+                    disable for_loop; // 如果讀取完所有預期元素，則退出循環
+            end
         end
+        
+        // 等待下一個數據周期
+        // 如果需要處理 m00_axis_tvalid 的變化，可在此加入額外邏輯
+    end
 
-        if (^m00_axis_tdata === 1'bx) begin
-            $display("Invalid data at index %d, sum_before_req=%d, expected=%d", 
-                     idx, sum_before_requant[idx], expected_output[idx]);
-            $finish;
-        end 
-        else if (m00_axis_tdata !== expected_output[idx]) begin
-            $display("Mismatch at index %d: sum_before_req=%d, expected=%d, got=%d",
-                     idx, sum_before_requant[idx], expected_output[idx], m00_axis_tdata);
-            $finish;
-        end 
-        else begin
-            $display("Match at index %d: sum_before_req=%d, requant_out=%d, got=%d",
-                     idx, sum_before_requant[idx], expected_output[idx], m00_axis_tdata);
-        end
-        idx = idx + 1;
+    if(idx < total_elements) begin
+        $display("Error: fewer outputs received than expected. Received: %d, Expected: %d", idx, total_elements);
+        $finish;
     end
 end
 endtask
 
 //----------------------------------------------
-// 17) (Optional) check_sram_data ...
+// 18) (Optional) check_sram_data ...
 //----------------------------------------------
 //   (此處省略，如原程式需要可保留)
 
 //----------------------------------------------
-// 18) 主控 Flow
+// 19) 主控 Flow
 //----------------------------------------------
 initial
 begin
     wait(s00_axis_aresetn && m00_axis_aresetn);
     @(posedge s00_axis_aclk);
-    $display("start!!!!!!");
+    $display("start tb_npu3!!!!!!");
     
     compute_convolution(); // 同時產生 sum_before_requant[] & expected_output[]
+    compute_exp_after_requant(); // 產生 exp_output[]
 
     send_image();
     send_weight();

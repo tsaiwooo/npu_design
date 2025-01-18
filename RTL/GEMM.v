@@ -6,9 +6,11 @@ module GEMM #
     parameter MAX_MACS = 64,
     parameter ADDR_WIDTH = 13,
     parameter DATA_WIDTH = 8,
+    parameter MAX_ADDR_WIDTH = 18,
     parameter QUANT_WIDTH = 32,
     parameter MAC_BIT_PER_GROUP = 6,
-    parameter MAX_GROUPS = 8
+    parameter MAX_GROUPS = 8,
+    parameter MAX_VECTOR_SIZE = 8
 )
 (
     input  wire                   clk,
@@ -29,24 +31,28 @@ module GEMM #
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
     // convolution output signal control
     output wire                   mac_valid_out,
-    output wire signed [DATA_WIDTH-1:0] mac_out,
+    output wire signed [8*DATA_WIDTH-1:0] mac_out,
     // convolution output image metadata
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
     output wire [ADDR_WIDTH-1:0]  for_conv_row,
     output wire [ADDR_WIDTH-1:0]  for_conv_col,
     // convolution output weight idx metadata
-    output [ADDR_WIDTH-1:0]  weight_idx_o,
-    output wire [17:0]  idx1_out,
+    output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
+    // output wire [17:0]  idx1_out,
     //-----------------------------------------------------
     // requant signals
     //-----------------------------------------------------
     input wire [31:0] quantized_multiplier,
     input signed [31:0] shift,
-    output wire requant_valid_o
+    output wire requant_valid_o,
     // after requant
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
+    // requant num of groups
+    output reg [2:0] stored_num_groups_o
 );
+    localparam signed [7:0] NEG_128 = -128;
+    localparam signed [7:0] POS_127 =  127;
     // convolution signals
     wire mac_data_ready;
     wire [MAX_MACS*DATA_WIDTH-1:0] data_mac_i;
@@ -60,14 +66,19 @@ module GEMM #
     reg [QUANT_WIDTH * MAX_GROUPS - 1 : 0] conv_to_requant_i;
     reg requant_input_valid;
     reg [QUANT_WIDTH-1 :0] conv_to_requant_32b_i;
+    wire signed [QUANT_WIDTH-1 :0] requant_32bits_out;
+    wire signed [DATA_WIDTH-1 :0] requant_8bits_out;
     wire requant_output_valid_o;
     assign requant_valid_o = requant_output_valid_o;
+    // assign mac_out = requant_8bits_out;
+    assign requant_8bits_out = (requant_32bits_out > $signed(POS_127))? POS_127:
+                                (requant_32bits_out < $signed(NEG_128))? NEG_128: requant_32bits_out;
     // groups_counter
     reg [$clog2(MAX_GROUPS+1) -1:0] groups_counter;
     // mac out to requant
     wire [MAX_GROUPS * QUANT_WIDTH-1:0] mac_out_to_conv_i;
     // requant FIFO signals
-    localparam FIFO_idle=0, FIFO_read=1, FIFO_requant=2;
+    localparam [2:0] FIFO_idle=0, FIFO_read=1, FIFO_requant=2;
     reg [2:0] FIFO_state, next_FIFO_state;
     wire fifo_full, fifo_empty;
     reg  fifo_wr, fifo_rd;
@@ -76,123 +87,146 @@ module GEMM #
     reg [QUANT_WIDTH * MAX_GROUPS - 1 : 0] cur_macs_out;
     reg [$clog2(MAX_GROUPS+1) - 1 : 0] cur_num_groups;
 
-    // FIFO FSM control
-    always @(posedge clk) begin
-        if (!rst) begin
-            FIFO_state <= FIFO_idle;
-        end else begin
-            FIFO_state <= next_FIFO_state;
-        end
-    end
+    //store num_groups_o and flag
+    reg is_stored = 0;
+    // reg [2:0] stored_num_groups_o;
 
-    always @(*) begin
-        case(FIFO_state)
-            FIFO_idle: begin
-                next_FIFO_state = (!fifo_empty)? FIFO_read: FIFO_idle;
-            end
-            FIFO_read: begin
-                next_FIFO_state = FIFO_requant;
-            end
-            FIFO_requant: begin
-                if(groups_counter == (cur_num_groups-1) && !fifo_empty)begin
-                    next_FIFO_state = FIFO_read;
-                end else if(groups_counter == (cur_num_groups-1) && fifo_empty)begin
-                    next_FIFO_state = FIFO_idle;
-                end else if(groups_counter < (cur_num_groups-1))begin
-                    next_FIFO_state = FIFO_requant;
-                end
-            end
-            default: begin
-                next_FIFO_state = FIFO_idle;
-            end
-        endcase
-    end
-
-    // FIFO write logic control
-    always @(posedge clk) begin
-        if (!rst) begin
-            fifo_wr <= 1'b0;
-        end else if (mac_valid_out && !fifo_full) begin
-            fifo_wr <= 1'b1;
-        end else begin
-            fifo_wr <= 1'b0;
-        end
-    end
-
-    // FIFO read logic control
-    // read from FIFO and store into fifo_data_reg
-    always @(posedge clk) begin
-        if (!rst) begin
-            fifo_rd <= 1'b0;
-        end else if(FIFO_state == FIFO_read)begin
-            fifo_rd <= 1'b1;
-            // $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
-        end else begin
-            fifo_rd <= 1'b0;
-        end 
-    end
-
-    // read data => store in cur_num_groups & cur_macs_out
-    always @(*) begin
-        if(!rst) begin
-            { cur_num_groups, cur_macs_out } <= 0;
-        end else if(fifo_rd) begin
-            // 同周期 read => data_out 已經是本次讀出的資料 (zero-cycle read)
-            { cur_num_groups, cur_macs_out } <= fifo_dout;
-        end
-    end
-
-    // assign conv_to_requant_32b_i
-    always @(*)begin
+    always @(posedge clk)begin
         if(!rst)begin
-            conv_to_requant_32b_i <= 0;
-        end else if(requant_input_valid)begin
-            conv_to_requant_32b_i <= cur_macs_out[QUANT_WIDTH * groups_counter  +: QUANT_WIDTH];
+            is_stored <= 0;
+        end else if(mac_valid_out && !is_stored)begin
+            is_stored <= 1;
         end
     end
 
-    // group counter: 計算到當前取到第幾個group, 表示我們要在fifo_data_reg取第幾個 32bits
-    always @(posedge clk) begin
-        if(!rst) begin
-            groups_counter <= 0;
-        // end else if(requant_input_valid) begin
-        end else if(requant_input_valid) begin
-            groups_counter <= groups_counter + 1;
-        end else begin
-            groups_counter <= 0;
+    always @(posedge clk)begin
+        if(!rst)begin
+            stored_num_groups_o <= 0;
+        end else if(is_stored)begin
+            stored_num_groups_o <= num_groups_o;
         end
     end
+
+    // FIFO FSM control
+    // always @(posedge clk) begin
+    //     if (!rst) begin
+    //         FIFO_state <= FIFO_idle;
+    //     end else begin
+    //         FIFO_state <= next_FIFO_state;
+    //     end
+    // end
+
+    // always @(*) begin
+    //     case(FIFO_state)
+    //         FIFO_idle: begin
+    //             next_FIFO_state = (!fifo_empty)? FIFO_read: FIFO_idle;
+    //         end
+    //         FIFO_read: begin
+    //             next_FIFO_state = FIFO_requant;
+    //         end
+    //         FIFO_requant: begin
+    //             if(groups_counter == (cur_num_groups-1) && !fifo_empty)begin
+    //                 next_FIFO_state = FIFO_read;
+    //             end else if(groups_counter == (cur_num_groups-1) && fifo_empty)begin
+    //                 next_FIFO_state = FIFO_idle;
+    //             end else if(groups_counter < (cur_num_groups-1))begin
+    //                 next_FIFO_state = FIFO_requant;
+    //             end
+    //         end
+    //         default: begin
+    //             next_FIFO_state = FIFO_idle;
+    //         end
+    //     endcase
+    // end
+
+    // // FIFO write logic control
+    // always @(posedge clk) begin
+    //     if (!rst) begin
+    //         fifo_wr <= 1'b0;
+    //     end else if (mac_valid_out && !fifo_full) begin
+    //         fifo_wr <= 1'b1;
+    //     end else begin
+    //         fifo_wr <= 1'b0;
+    //     end
+    // end
+
+    // // FIFO read logic control
+    // // read from FIFO and store into fifo_data_reg
+    // always @(posedge clk) begin
+    //     if (!rst) begin
+    //         fifo_rd <= 1'b0;
+    //     end else if(FIFO_state == FIFO_read)begin
+    //         fifo_rd <= 1'b1;
+    //         // $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
+    //     end else begin
+    //         fifo_rd <= 1'b0;
+    //     end 
+    // end
+
+    // // read data => store in cur_num_groups & cur_macs_out
+    // always @(*) begin
+    //     if(!rst) begin
+    //         { cur_num_groups, cur_macs_out } <= 0;
+    //     end else if(fifo_rd) begin
+    //         // 同周期 read => data_out 已經是本次讀出的資料 (zero-cycle read)
+    //         { cur_num_groups, cur_macs_out } <= fifo_dout;
+    //     end
+    // end
+
+    // // assign conv_to_requant_32b_i
+    // always @(*)begin
+    //     if(!rst)begin
+    //         conv_to_requant_32b_i <= 0;
+    //     end else if(requant_input_valid)begin
+    //         conv_to_requant_32b_i <= cur_macs_out[QUANT_WIDTH * groups_counter  +: QUANT_WIDTH];
+    //     end
+    // end
+
+    // // group counter: 計算到當前取到第幾個group, 表示我們要在fifo_data_reg取第幾個 32bits
+    // always @(posedge clk) begin
+    //     if(!rst) begin
+    //         groups_counter <= 0;
+    //     // end else if(requant_input_valid) begin
+    //     end else if(requant_input_valid) begin
+    //         groups_counter <= groups_counter + 1;
+    //     end else begin
+    //         groups_counter <= 0;
+    //     end
+    // end
+
 
     // requant input valid signal control
     // 1. groups_counter < num_groups_i - 1: 保持有效
     // 2. groups_counter == 0 && rd == 1: 保持有效
-    always @(posedge clk) begin
-        if(!rst) begin
-            requant_input_valid <= 0;
-        end else if(FIFO_state == FIFO_requant && groups_counter < cur_num_groups-1) begin
-            requant_input_valid <= 1;
-        end else begin
-            requant_input_valid <= 0;
-        end
-    end
+    // always @(posedge clk) begin
+    //     if(!rst) begin
+    //         requant_input_valid <= 0;
+    //     end else if(FIFO_state == FIFO_requant && groups_counter < cur_num_groups-1) begin
+    //         requant_input_valid <= 1;
+    //     end else begin
+    //         requant_input_valid <= 0;
+    //     end
+    // end
+
+
 
     // MAC engine and MultiplyByQuantizedMultiplier pipeline FIFO buffer
-    FIFO #
-    (
-        .DATA_WIDTH(QUANT_WIDTH * MAX_GROUPS + $clog2(MAX_GROUPS+1)),
-        .DEPTH(131072),
-        .ADDR_WIDTH(18)
-    ) mac_pipeline_fifo
-    (
-        .clk(clk),
-        .rst(rst),
-        .wr(fifo_wr),
-        .rd(fifo_rd),
-        .data_in({ num_groups_o , mac_out_to_conv_i}),
-        .data_out(fifo_dout),
-        .full(fifo_full),
-        .empty(fifo_empty)
-    );
+    // FIFO #
+    // (
+    //     .DATA_WIDTH(QUANT_WIDTH * MAX_GROUPS + $clog2(MAX_GROUPS+1)),
+    //     .DEPTH(131072),
+    //     .ADDR_WIDTH(18)
+    // ) mac_pipeline_fifo
+    // (
+    //     .clk(clk),
+    //     .rst(rst),
+    //     .wr(fifo_wr),
+    //     .rd(fifo_rd),
+    //     .data_in({ num_groups_o , mac_out_to_conv_i}),
+    //     .data_out(fifo_dout),
+    //     .full(fifo_full),
+    //     .empty(fifo_empty)
+    // );
 
     convolution #
     (
@@ -249,18 +283,35 @@ module GEMM #
         .valid_out(mac_valid_out),
         .num_groups_o(num_groups_o)
     );
+    // vector signals for requant 
+    wire [MAX_VECTOR_SIZE-1:0] requant_input_valid_array;
+    wire [MAX_VECTOR_SIZE-1:0] requant_output_valid_o_array;
+    wire signed [QUANT_WIDTH-1:0] requant_32bits_out_array[0:MAX_VECTOR_SIZE-1];
+    wire signed [DATA_WIDTH-1:0] requant_8bits_out_array[0:MAX_VECTOR_SIZE-1];
 
-    
-    MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_inst(
-        .clk(clk),
-        .rst(rst),
-        .x(conv_to_requant_32b_i),
-        .quantized_multiplier(quantized_multiplier),
-        .shift(shift),
-        .input_valid(requant_input_valid),
-        .output_valid(requant_output_valid_o),
-        .x_mul_by_quantized_multiplier(mac_out)
-    ); 
+genvar requant_muodule_idx; 
+generate
+    for(requant_muodule_idx = 0; requant_muodule_idx < MAX_VECTOR_SIZE; requant_muodule_idx = requant_muodule_idx + 1)begin: requant_vector   
+        MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_inst(
+            .clk(clk),
+            .rst(rst),
+            .x(mac_out_to_conv_i[requant_muodule_idx * QUANT_WIDTH +: QUANT_WIDTH]),
+            .quantized_multiplier(quantized_multiplier),
+            .shift(shift),
+            .input_valid(requant_input_valid_array[requant_muodule_idx]),
+            .output_valid(requant_output_valid_o_array[requant_muodule_idx]),
+            .x_mul_by_quantized_multiplier(requant_32bits_out_array[requant_muodule_idx])
+        ); 
+
+        // requant input valid signal control
+        assign requant_input_valid_array[requant_muodule_idx] = (requant_muodule_idx < num_groups_o && mac_valid_out)? 1 : 0;
+        // requant output data saturate
+        assign requant_8bits_out_array[requant_muodule_idx] = (requant_32bits_out_array[requant_muodule_idx] >= $signed(POS_127))? $signed(POS_127):
+                                (requant_32bits_out_array[requant_muodule_idx] <= $signed(NEG_128))? $signed(NEG_128): requant_32bits_out_array[requant_muodule_idx][7:0];
+    end
+endgenerate
+    assign requant_output_valid_o = requant_output_valid_o_array[0];
+    assign mac_out = { requant_8bits_out_array[7], requant_8bits_out_array[6], requant_8bits_out_array[5], requant_8bits_out_array[4], requant_8bits_out_array[3], requant_8bits_out_array[2], requant_8bits_out_array[1], requant_8bits_out_array[0]};
 
     // requant_idx control by requant_output_valid_o 
     reg [17:0] requant_idx;
@@ -272,7 +323,7 @@ module GEMM #
         end
     end
 
-    assign idx1_out = requant_idx;
+    // assign idx1_out = requant_idx;
 
     
 endmodule

@@ -16,13 +16,13 @@ module MultiplyByQuantizedMultiplier_tb;
 
     // Outputs
     wire output_valid;
-    wire signed [7:0] x_mul_by_quantized_multiplier;
+    wire signed [31:0] x_mul_by_quantized_multiplier;
 
     // Test vectors
     reg signed [31:0] test_x [0:TEST_COUNT-1];
     reg [31:0] test_quantized_multiplier [0:TEST_COUNT-1];
     reg signed [31:0] test_shift [0:TEST_COUNT-1];
-    reg signed [7:0] golden_results [0:TEST_COUNT-1];
+    reg signed [31:0] golden_results [0:TEST_COUNT-1];
     integer pass_count = 0;
     integer fail_count = 0;
     integer error_count = 0;
@@ -49,16 +49,16 @@ module MultiplyByQuantizedMultiplier_tb;
     end
 
     // Golden Model for reference calculation
-    function signed [7:0] golden_multiply_by_quantized_multiplier(
+    function signed [31:0] golden_multiply_by_quantized_multiplier(
         input signed [31:0] x,
         input signed [31:0] quantized_multiplier,
         input signed [31:0] shift
     );
         reg signed [63:0] ab_64;
-        reg [31:0] remainder, threshold;
+        reg signed [31:0] remainder, threshold;
         reg signed [31:0] left_shift, right_shift;
         reg signed [31:0] ab_x2_high32;
-        reg signed [31:0] nudge;
+        reg signed [30:0] nudge;
         reg signed [31:0] mask;
         reg overflow;
         reg signed [31:0] tmp_golden;
@@ -73,12 +73,12 @@ module MultiplyByQuantizedMultiplier_tb;
             ab_64 = ab_64 * quantized_multiplier;
 
             overflow = (x == quantized_multiplier && x == 32'h80000000);
-            nudge = (ab_64 >= 0) ? (1 << 30) : (1 - (1 << 30));
+            nudge = (ab_64 >= 0) ? (1 << 30) : (1 - (1 <<< 30));
             ab_x2_high32 = overflow ? 32'h7fffffff : (ab_64 + nudge) >>> 31;
-            $display("x = %d, quantized_multiplier = %d", x, quantized_multiplier);
+            $display("x = %d, quantized_multiplier = %d, nudge = %h", x, quantized_multiplier, nudge);
             $display("left_shift = %d, right_shift = %d", left_shift, right_shift);
             $display("ab_64 = %h", ab_64);
-            $display("ab_x2_high32 = %h, mask = %h, remainder = %h", ab_x2_high32, mask, remainder);
+            $display("ab_x2_high32 = %h, mask = %h", ab_x2_high32, mask);
             if (ab_64 < -128<<right_shift && right_shift) begin
                 golden_multiply_by_quantized_multiplier = -8'd128;
             end else if (ab_64 > 127<<right_shift && right_shift) begin
@@ -91,18 +91,18 @@ module MultiplyByQuantizedMultiplier_tb;
                     threshold = threshold + 1;
 
                 tmp_golden = ab_x2_high32 >>> right_shift;
+                $display("remainder = %h, threshold = %h, ab_x2_high32 = %h", remainder, threshold,ab_x2_high32);
                 $display("golden_multiply_by_quantized_multiplier = %h", tmp_golden);
-                if (remainder > threshold || 
-                (remainder == threshold && (ab_x2_high32 & 1) && ab_x2_high32 != 32'h7fffffff))begin
+                if (remainder > threshold)begin
                     golden_multiply_by_quantized_multiplier = (tmp_golden >= $signed(POS_127))? POS_127:
                                                                (tmp_golden < $signed(NEG_128))? NEG_128: tmp_golden + 1;
                 end
-                else if(tmp_golden > $signed(POS_127)) begin
-                    golden_multiply_by_quantized_multiplier = 127;
-                end
-                else if(tmp_golden < $signed(NEG_128)) begin
-                    golden_multiply_by_quantized_multiplier = -128;
-                end
+                // else if(tmp_golden > $signed(POS_127)) begin
+                //     golden_multiply_by_quantized_multiplier = 127;
+                // end
+                // else if(tmp_golden < $signed(NEG_128)) begin
+                //     golden_multiply_by_quantized_multiplier = -128;
+                // end
                 else begin
                     golden_multiply_by_quantized_multiplier = tmp_golden;
                 end
@@ -124,16 +124,16 @@ module MultiplyByQuantizedMultiplier_tb;
         test_x[3] = 32'd14539; test_quantized_multiplier[3] = 32'h40000000; test_shift[3] = 3;
         golden_results[3] = golden_multiply_by_quantized_multiplier(test_x[3], test_quantized_multiplier[3], test_shift[3]);
 
-        test_x[4] = -32'd26; test_quantized_multiplier[4] = 32'h40000000; test_shift[4] = 3;
+        test_x[4] = 32'hFFFFFFF9; test_quantized_multiplier[4] = 32'd1591541760; test_shift[4] = 22;
         golden_results[4] = golden_multiply_by_quantized_multiplier(test_x[4], test_quantized_multiplier[4], test_shift[4]);
 
-        test_x[5] = 32'd1024; test_quantized_multiplier[5] = 32'd512; test_shift[5] = 1;
+        test_x[5] = 32'hFFFFFFFD; test_quantized_multiplier[5] = 32'd1591541760; test_shift[5] = 22;
         golden_results[5] = golden_multiply_by_quantized_multiplier(test_x[5], test_quantized_multiplier[5], test_shift[5]);
 
-        test_x[6] = 32'd9999; test_quantized_multiplier[6] = 32'd3333; test_shift[6] = 8;
+        test_x[6] = 32'hFFFFFFFA; test_quantized_multiplier[6] = 32'd1591541760; test_shift[6] = 22;
         golden_results[6] = golden_multiply_by_quantized_multiplier(test_x[6], test_quantized_multiplier[6], test_shift[6]);
 
-        test_x[7] = -32'd256; test_quantized_multiplier[7] = 32'd128; test_shift[7] = -2;
+        test_x[7] = 32'h4; test_quantized_multiplier[7] = 32'd1591541760; test_shift[7] = 22;
         golden_results[7] = golden_multiply_by_quantized_multiplier(test_x[7], test_quantized_multiplier[7], test_shift[7]);
     end
 
@@ -160,16 +160,19 @@ module MultiplyByQuantizedMultiplier_tb;
         @(negedge clk);
         input_valid = 0;
     end
-
+    reg signed [31:0] x_mul_by_quantized_multiplier_reg;
     // Monitor outputs and validate
     always @(posedge clk) begin
         if (output_valid) begin
-            $display("Received output %0d: %d", output_index, x_mul_by_quantized_multiplier);
-            if (x_mul_by_quantized_multiplier == golden_results[output_index]) begin
-                $display("Test %0d PASSED, GOLDEN = %0d", output_index, golden_results[output_index]);
+            $display("Received output %0d: %h", output_index, x_mul_by_quantized_multiplier);
+            // x_mul_by_quantized_multiplier_reg = (x_mul_by_quantized_multiplier > $signed(POS_127)) ? $signed(POS_127) :
+            //                                 (x_mul_by_quantized_multiplier < $signed(NEG_128)) ? $signed(NEG_128) : x_mul_by_quantized_multiplier;
+            x_mul_by_quantized_multiplier_reg = x_mul_by_quantized_multiplier;
+            if (x_mul_by_quantized_multiplier_reg == golden_results[output_index]) begin
+                $display("Test %0d PASSED, GOLDEN = %h", output_index, golden_results[output_index]);
                 pass_count = pass_count + 1;
             end else begin
-                $display("Test %0d FAILED, GOLDEN = %0d", output_index, golden_results[output_index]);
+                $display("Test %0d FAILED, GOLDEN = %h", output_index, golden_results[output_index]);
                 fail_count = fail_count + 1;
             end
             output_index = output_index + 1;

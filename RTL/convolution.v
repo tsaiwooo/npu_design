@@ -18,10 +18,12 @@ module convolution #
 (
     parameter MAX_MACS = 64,
     parameter ADDR_WIDTH = 13,
+    parameter MAX_ADDR_WIDTH = 18,
     parameter DATA_WIDTH = 8,
     parameter QUANT_WIDTH = 32,
     parameter MAC_BIT_PER_GROUP = 6,
-    parameter MAX_GROUPS = 8
+    parameter MAX_GROUPS = 8,
+    parameter MAX_ITER = 16
 )
 (
     input  wire                   clk,
@@ -37,8 +39,8 @@ module convolution #
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
     // output signal control that mac data is ready
     output wire                   mac_data_ready_o,
-    output [DATA_WIDTH * MAX_MACS - 1 : 0] data_mac_o,
-    output [DATA_WIDTH * MAX_MACS - 1 : 0] weight_mac_o,
+    output reg [DATA_WIDTH * MAX_MACS - 1 : 0] data_mac_o,
+    output reg [DATA_WIDTH * MAX_MACS - 1 : 0] weight_mac_o,
     // output number of groups
     output wire [$clog2(MAX_GROUPS+1) -1:0]             num_groups_o,
     // output number macs of each group
@@ -53,7 +55,7 @@ module convolution #
     output reg [ADDR_WIDTH-1:0]  for_conv_row,
     output reg [ADDR_WIDTH-1:0]  for_conv_col,
     // output weight idx metadata
-    output [ADDR_WIDTH-1:0]  weight_idx_o
+    output [MAX_ADDR_WIDTH-1:0]  weight_idx_o
     // output reg [ADDR_WIDTH-1:0]  idx1_out
 );
     // mac number of each group
@@ -71,8 +73,8 @@ module convolution #
     assign nums_input = SRAM_WIDTH_O >> shift_amount; // 64 / 2^3, 最多一次能從sram取得的data數量
 
     wire [$clog2(MAX_MACS):0] total_macs;
-    reg [DATA_WIDTH * MAX_MACS - 1 : 0] data_mac_o;
-    reg [DATA_WIDTH * MAX_MACS - 1 : 0] weight_mac_o;
+    // reg [DATA_WIDTH * MAX_MACS - 1 : 0] data_mac_o;
+    // reg [DATA_WIDTH * MAX_MACS - 1 : 0] weight_mac_o;
 
     assign total_macs = ker_row * ker_col;
     // mac data ready
@@ -85,8 +87,8 @@ module convolution #
     assign out_col = img_col - ker_col + 1;
 
     // control output weight idx
-    reg [ADDR_WIDTH-1:0] weight_idx;
-    reg [ADDR_WIDTH-1:0] weight_idx_delay;
+    reg [MAX_ADDR_WIDTH-1:0] weight_idx;
+    reg [MAX_ADDR_WIDTH-1:0] weight_idx_delay;
     assign weight_idx_o = weight_idx;
     // 計算每次有多少個group
     reg [2:0] num_groups_reg; 
@@ -100,7 +102,6 @@ module convolution #
     wire [2:0] groups_of_eight;
     assign groups_of_eight = MAX_GROUPS - ker_col + 1;
 
-    parameter MAX_ITER = 100; 
     integer i;
     always @(*)begin
         groups = 0;
@@ -182,7 +183,7 @@ module convolution #
             end
         end 
     end
-    reg [ADDR_WIDTH-1:0] for_conv_row, for_conv_col;
+    // reg [ADDR_WIDTH-1:0] for_conv_row, for_conv_col;
     // for_conv_row Logic
     always @(posedge clk) begin
         if (!rst) begin
@@ -273,9 +274,11 @@ module convolution #
                 for(group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
                     // 確保這個 group 的起始位置不超過整個 data_mac_o 的最大範圍
                     if(group_idx * macs_of_group < MAX_MACS && group_idx < num_groups_reg) begin
-                        for(idx = 0; idx < ker_col && idx < nums_input &&  (idx + for_conv_col_delay + for_conv_row_delay * ker_col) < total_macs; idx = idx + 1) begin
-                            data_mac_o[( (group_idx * macs_of_group) + idx + for_conv_row_delay * ker_col + for_conv_col) * DATA_WIDTH +: DATA_WIDTH ]
-                                <= data_in[( group_idx + idx ) * DATA_WIDTH +: DATA_WIDTH];
+                        for(idx = 0; idx < MAX_ITER ; idx = idx + 1) begin
+                            if(idx < ker_col && idx < nums_input &&  (idx + for_conv_col_delay + for_conv_row_delay * ker_col) < total_macs) begin
+                                data_mac_o[( (group_idx * macs_of_group) + idx + for_conv_row_delay * ker_col + for_conv_col) * DATA_WIDTH +: DATA_WIDTH ]
+                                    <= data_in[( group_idx + idx ) * DATA_WIDTH +: DATA_WIDTH];
+                            end
                         end
                     end
                 end
@@ -322,13 +325,14 @@ module convolution #
                 for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
                     if (group_idx * macs_of_group < MAX_MACS && group_idx < num_groups_reg) begin
                         // idx 不可超過 nums_input、ker_col 且 (weight_idx_delay + idx) 不可超過 total_macs
-                        for (idx = 0; ((weight_idx_delay + idx) < total_macs); idx = idx + 1) begin
-
+                        for (idx = 0; idx < MAX_ITER; idx = idx + 1) begin
                             // 將權重資料放到對應的線性位置
                             // 線性位置： (group_idx * macs_of_group) + (weight_idx_delay + idx)
                             // 將 weight_in 中的第 (group_idx+idx) 筆資料對應到該位置
-                            weight_mac_o[((group_idx * macs_of_group) + (weight_idx_delay + idx)) * DATA_WIDTH +: DATA_WIDTH] 
-                                <= weight_in[idx * DATA_WIDTH +: DATA_WIDTH];
+                            if((weight_idx_delay + idx) < total_macs)begin
+                                weight_mac_o[((group_idx * macs_of_group) + (weight_idx_delay + idx)) * DATA_WIDTH +: DATA_WIDTH] 
+                                    <= weight_in[idx * DATA_WIDTH +: DATA_WIDTH];
+                            end
                         end
                     end
                 end

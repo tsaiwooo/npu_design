@@ -1,3 +1,7 @@
+// ---------------------
+// function: RoundingDivideByPOT
+// purpose: Perform a rounding division operation by a power of two
+// ---------------------
 `timescale 1ns / 1ps
 `include "params.vh"
 

@@ -3,7 +3,7 @@
 // 1. Last cycle錯了 應該提早一個cycle
 // 2. weight那邊有問題, 只收到8個而已
 // 3. 
-module tb_npu1();
+module tb_npu2();
 
 //----------------------------------------------
 // 1) Parameters
@@ -63,7 +63,8 @@ reg signed [31:0] test_shift  = 3;       // -12 -> 右移12bits
 // 6) Outputs from NPU
 //----------------------------------------------
 wire  s00_axis_tready;
-wire  signed [C_AXIS_MDATA_WIDTH-1:0] m00_axis_tdata;
+wire  signed [8*C_AXIS_MDATA_WIDTH-1:0] m00_axis_tdata;
+wire [7:0]  m00_axis_tstrb;
 wire  m00_axis_tvalid;
 wire  m00_axis_tlast;
 wire  [NUM_CHANNELS_WIDTH-1:0] m00_axis_tuser;
@@ -86,7 +87,7 @@ end
 //----------------------------------------------
 initial begin
     $fsdbDumpfile("verdi.fsdb");
-    $fsdbDumpvars(0, tb_npu1, "+all");
+    $fsdbDumpvars(0, tb_npu2, "+all");
 end
 
 //----------------------------------------------
@@ -127,7 +128,7 @@ npu #(
     .m00_axis_tvalid(m00_axis_tvalid),
     .m00_axis_tlast(m00_axis_tlast),
     .m00_axis_tuser(m00_axis_tuser),
-    .m00_axis_tstrb(),
+    .m00_axis_tstrb(m00_axis_tstrb),
     // Requant
     .quantized_multiplier(test_q_multiplier),
     .shift(test_shift),
@@ -301,39 +302,58 @@ endtask
 //     - 一併印出 "requant前的值", "expected", "got"
 //----------------------------------------------
 task check_output;
-begin
     integer total_elements;
-    integer idx = 0;
-
+    integer idx;                // 用於指示期望輸出數組的索引
+    integer byte_idx;           // 用於遍歷每個位元組
+    reg [63:0] received_data;   // 用於儲存當前周期接收到的64位數據
+    reg [7:0]  received_strb;   // 用於儲存位元組使能信號
+    reg [7:0]  received_byte;   // 臨時儲存提取的有效位元組
+begin
     total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
+    idx = 0;
+    
     @(negedge m00_axis_aclk);
     m00_axis_tready = 1;
-
-    // 等待輸出有效
+    
+    // 等待第一個有效輸出
     wait(m00_axis_tvalid);
 
-    while (m00_axis_tvalid) begin
+    while (m00_axis_tvalid && idx < total_elements) begin
         @(posedge m00_axis_aclk);
-
-        if (idx >= total_elements) begin
-            $display("Warning: output data more than expected. idx=%d", idx);
+        
+        // 讀取當前周期的數據和位元組使能
+        received_data = m00_axis_tdata;
+        received_strb = m00_axis_tstrb;
+        
+        // 遍歷每個位元組，檢查哪些位元組有效
+        for_loop : for (byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+            // if (received_strb[byte_idx]) begin
+            if (byte_idx < m00_axis_tstrb) begin
+                // 提取有效位元組
+                received_byte = received_data[byte_idx*8 +: 8];
+                
+                // 比較有效位元組與預期輸出
+                if (received_byte !== expected_output[idx]) begin
+                    $display("Mismatch at element %d, byte %d: expected=%h, got=%h", 
+                             idx, byte_idx, expected_output[idx], received_byte);
+                    $finish;
+                end else begin
+                    $display("Match at element %d, byte %d: %h", idx, byte_idx, received_byte);
+                end
+                
+                idx = idx + 1; // 每處理一個有效位元組，移動到下一個預期元素
+                if(idx >= total_elements) 
+                    disable for_loop; // 如果讀取完所有預期元素，則退出循環
+            end
         end
+        
+        // 等待下一個數據周期
+        // 如果需要處理 m00_axis_tvalid 的變化，可在此加入額外邏輯
+    end
 
-        if (^m00_axis_tdata === 1'bx) begin
-            $display("Invalid data at index %d, sum_before_req=%d, expected=%d", 
-                     idx, sum_before_requant[idx], expected_output[idx]);
-            $finish;
-        end 
-        else if (m00_axis_tdata !== expected_output[idx]) begin
-            $display("Mismatch at index %d: sum_before_req=%d, expected=%d, got=%d",
-                     idx, sum_before_requant[idx], expected_output[idx], m00_axis_tdata);
-            $finish;
-        end 
-        else begin
-            $display("Match at index %d: sum_before_req=%d, requant_out=%d, got=%d",
-                     idx, sum_before_requant[idx], expected_output[idx], m00_axis_tdata);
-        end
-        idx = idx + 1;
+    if(idx < total_elements) begin
+        $display("Error: fewer outputs received than expected. Received: %d, Expected: %d", idx, total_elements);
+        $finish;
     end
 end
 endtask

@@ -11,7 +11,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input [C_AXIS_TDATA_WIDTH-1:0] gemm1_data_in,
     input  gemm1_en,
     input  gemm1_we,
-    input [NUM_SRAMS-1:0] gemm1_idx,
+    input [7:0] gemm1_idx,
     output signed [SRAM_WIDTH_O-1:0] gemm1_data_out,
 
     // GEMM2 port
@@ -19,15 +19,15 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input [C_AXIS_TDATA_WIDTH-1:0] gemm2_data_in,
     input  gemm2_en,
     input  gemm2_we,
-    input [NUM_SRAMS-1:0] gemm2_idx,
+    input [7:0] gemm2_idx,
     output signed [SRAM_WIDTH_O-1:0] gemm2_data_out,
     
     // ELEM port
     input [MAX_ADDR_WIDTH-1:0] elem_addr,
-    input signed [4*C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
+    input signed [C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
     input  elem_en,
     input  elem_we,
-    input [NUM_SRAMS-1:0] elem_idx,
+    input [7:0] elem_idx,
     output signed [SRAM_WIDTH_O-1:0] elem_data_out,
 
     // axi4 input port
@@ -38,12 +38,12 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
 
     // axi4 output port
     input sram_out_en,
-    input [NUM_SRAMS-1:0] sram_out_idx,
+    input [7:0] sram_out_idx,
     input [MAX_ADDR_WIDTH-1:0] sram_out_addr,
     output signed [SRAM_WIDTH_O-1:0] sram_out_data
 );
-    reg [NUM_SRAMS-1:0] en;
-    reg [NUM_SRAMS-1:0] we;
+    reg [7:0] en;
+    reg [7:0] we;
     reg [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr;
     reg [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_in;
     wire [NUM_SRAMS * SRAM_WIDTH_O - 1 : 0] data_out;
@@ -76,6 +76,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
         end
         if(write_enable)begin
             we[axi_idx] = 1'b1;
+            $display("Writing image data to SRAM, address = %d, data = %d", write_address, write_data);
         end
     end
 

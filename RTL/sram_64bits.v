@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 `include "params.vh"
 
-module sram
-#(parameter DATA_WIDTH = 32, N_ENTRIES = 1024, parameter DATA_WIDTH_O = 64, parameter MAX_ITER = 10)
+module sram_64bits
+#(parameter DATA_WIDTH = 32, N_ENTRIES = 1024, parameter DATA_WIDTH_O = 64)
 (
     input                           clk_i,
     input                           en_i,
@@ -26,13 +26,7 @@ module sram
                 RAM[addr_i] <= data_i;
             // read operaition
             end else begin
-                // data_o <= RAM[addr_i];
-                for(i=0; i<MAX_ITER; i=i+1) begin
-                    if(nums_input < MAX_ITER)
-                        data_o[i*DATA_WIDTH +: DATA_WIDTH] <= RAM[addr_i + i];
-                    // if(DATA_WIDTH == 4'd16)
-                    //     $display("nums_inpt = %d, i = %d, data_o = %d", nums_input, i, data_o);
-                end
+                data_o <= RAM[addr_i];
             end
         end
     end

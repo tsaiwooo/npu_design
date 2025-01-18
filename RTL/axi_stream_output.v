@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-
+// 這裡我read_counter都先用*6代替, 看是否正確, 因為一個data有6筆result
 module axi_stream_output #
 (
     parameter ADDR_WIDTH = 13,
@@ -9,7 +9,7 @@ module axi_stream_output #
 (
     input  wire                   m_axis_aclk,
     input  wire                   m_axis_aresetn,
-    output reg signed [DATA_WIDTH-1:0]  m_axis_tdata,
+    output reg signed [SRAM_WIDTH_O-1:0]  m_axis_tdata,
     output reg                    m_axis_tvalid,
     input  wire                   m_axis_tready,
     output reg                    m_axis_tlast,
@@ -62,9 +62,11 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
         end else if (start_condition && data_ready) begin
-            m_axis_tdata <= $signed(sram_out_data_out[DATA_WIDTH-1:0]);
+            // m_axis_tdata <= $signed(sram_out_data_out[DATA_WIDTH-1:0]);
+            m_axis_tdata <= sram_out_data_out;
         end else begin
-            m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
+            // m_axis_tdata <= {SRAM_WIDTH_O{1'b0}};
+            m_axis_tdata <= 0;
         end
     end
 
@@ -73,7 +75,7 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tvalid <= 1'b0;
         end else if (start_condition) begin
-            if (read_counter >= (out_size - 1)) begin
+            if (6*read_counter >= (out_size - 1)) begin
                 m_axis_tvalid <= 1'b0;
             end else if (data_ready) begin
                 m_axis_tvalid <= 1'b1;
@@ -112,7 +114,7 @@ module axi_stream_output #
         if (reset_condition) begin
             read_counter <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && data_ready) begin
-            if (read_counter < (out_size - 1)) begin
+            if (6*read_counter < (out_size - 1)) begin
                 read_counter <= read_counter + 1;
             end else begin
                 read_counter <= {MAX_ADDR_WIDTH{1'b0}};
@@ -126,7 +128,7 @@ module axi_stream_output #
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
             output_done <= 1'b0;
-        end else if (start_condition && data_ready && (read_counter >= (out_size - 1))) begin
+        end else if (start_condition && data_ready && (6*read_counter >= (out_size - 1))) begin
             output_done <= 1'b1;
         end else begin
             output_done <= 1'b0;

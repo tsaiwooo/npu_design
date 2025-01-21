@@ -15,7 +15,7 @@
 module exp_pipeline(
     input  clk,
     input  rst,
-    input  [31:0] x,
+    input  signed [31:0] x,
     input  [3:0] integer_bits,
     input  input_valid,
     output reg [31:0] exp_x,
@@ -23,18 +23,23 @@ module exp_pipeline(
 );
 
     // Multiplier constants for Taylor series expansion for e^x
-    localparam [15:0] multiplier_0 = 16'b1000000000000000;  // 1/2
-    localparam [15:0] multiplier_1 = 16'b0010101010101010;  // approx 1/6
-    localparam [15:0] multiplier_2 = 16'b0000101010101010;  // approx 1/24
-    localparam [15:0] multiplier_3 = 16'b0000001000100010;  // approx 1/120
-    localparam [15:0] multiplier_4 = 16'b0000000011001100;  // approx 1/720
+    // localparam signed [15:0] multiplier_0 = 16'b1000000000000000;  // 1/2
+    // localparam signed [15:0] multiplier_1 = 16'b0010101010101010;  // approx 1/6
+    // localparam signed [15:0] multiplier_2 = 16'b0000101010101010;  // approx 1/24
+    // localparam signed [15:0] multiplier_3 = 16'b0000001000100010;  // approx 1/120
+    // localparam signed [15:0] multiplier_4 = 16'b0000000011001100;  // approx 1/720
+    localparam signed [15:0] multiplier_0 = 16'b0100000000000000;  // 1/2
+    localparam signed [15:0] multiplier_1 = 16'b0010101010101101;  // approx 1/3
+    localparam signed [15:0] multiplier_2 = 16'b0010000000000000;  // approx 1/4
+    localparam signed [15:0] multiplier_3 = 16'b0001100110011010;  // approx 1/5
+    localparam signed [15:0] multiplier_4 = 16'b0001010101010101;  // approx 1/6
 
     // Pipeline registers
-    reg [43:0] x_extention_stage1, x_extention_stage2, x_extention_stage3, x_extention_stage4, x_extention_stage5;
-    reg [87:0] x_power_stage2, x_power_stage3, x_power_stage4, x_power_stage5;
-    reg [87:0] term1, term2, term3, term4, term5;
-    reg [87:0] temp_stage1, temp_stage2, temp_stage3, temp_stage4, temp_stage5;
-    reg [87:0] final_result;
+    reg signed [43:0] x_extention_stage1, x_extention_stage2, x_extention_stage3, x_extention_stage4, x_extention_stage5;
+    reg signed [87:0] x_power_stage2, x_power_stage3, x_power_stage4, x_power_stage5;
+    reg signed [87:0] term1, term2, term3, term4, term5;
+    reg signed [87:0] temp_stage1, temp_stage2, temp_stage3, temp_stage4, temp_stage5;
+    reg signed [87:0] final_result;
 
     // Valid signal propagation through the pipeline
     reg valid_stage1, valid_stage2, valid_stage3, valid_stage4, valid_stage5, valid_stage6, valid_stage7;
@@ -44,7 +49,10 @@ module exp_pipeline(
         if (!rst) begin
             x_extention_stage1 <= 0;
         end else if (input_valid) begin
-            x_extention_stage1 <= {20'b0, x[30:0]} << integer_bits; // Extend to Q12.31
+            // x_extention_stage1 <= {{12{x[31]}}, x[30:0]} << integer_bits; // Extend to Q12.31
+            x_extention_stage1 <= $signed(x) << integer_bits; // Extend to Q12.31
+            // x_extention_stage1 <= { 12'b1, x } <<< 12; // Extend to Q12.31
+            // x_extention_stage1 <= { {8{x[31]}} , x , 4'b0 }; // Extend to Q12.31
         end
     end
 
@@ -53,7 +61,10 @@ module exp_pipeline(
         if (!rst) begin
             term1 <= 0;
         end else if (input_valid) begin
-            term1 <= {20'b0, x[30:0]} << integer_bits; // Initial term
+            // term1 <= {{12{x[31]}}, x[30:0]} << integer_bits; // Initial term
+            term1 <= $signed(x) << integer_bits; // Initial term
+            // term1 <= { 12'b1, x } <<< 12; // Extend to Q12.31
+            // term1 <= { {8{x[31]}} , x ,4'b0 }; // Extend to Q12.31
         end
     end
 
@@ -87,7 +98,7 @@ module exp_pipeline(
         if (!rst) begin
             x_power_stage2 <= 0;
         end else if (valid_stage1) begin
-            x_power_stage2 <= (x_extention_stage1 * x_extention_stage1) >> 31;
+            x_power_stage2 <= (x_extention_stage1 * x_extention_stage1) >>> 31;
         end
     end
 
@@ -96,7 +107,7 @@ module exp_pipeline(
         if (!rst) begin
             term2 <= 0;
         end else if (valid_stage1) begin
-            term2 <= (x_extention_stage1 * x_extention_stage1 * multiplier_0) >> 47;
+            term2 <= (x_extention_stage1 * x_extention_stage1 * multiplier_0) >>> 46;
         end
     end
 
@@ -105,7 +116,7 @@ module exp_pipeline(
         if (!rst) begin
             temp_stage2 <= 0;
         end else if (valid_stage1) begin
-            temp_stage2 <= temp_stage1 - term1;
+            temp_stage2 <= temp_stage1 + term1;
         end
     end
 
@@ -132,7 +143,7 @@ module exp_pipeline(
         if (!rst) begin
             x_power_stage3 <= 0;
         end else if (valid_stage2) begin
-            x_power_stage3 <= (x_power_stage2 * x_extention_stage2) >> 31;
+            x_power_stage3 <= (x_power_stage2 * x_extention_stage2) >>> 31;
         end
     end
 
@@ -141,7 +152,7 @@ module exp_pipeline(
         if (!rst) begin
             term3 <= 0;
         end else if (valid_stage2) begin
-            term3 <= (x_power_stage2 * x_extention_stage2 * multiplier_1) >> 47;
+            term3 <= (x_power_stage2 * x_extention_stage2 * multiplier_1) >>> 46;
         end
     end
 
@@ -177,7 +188,7 @@ module exp_pipeline(
         if (!rst) begin
             x_power_stage4 <= 0;
         end else if (valid_stage3) begin
-            x_power_stage4 <= (x_power_stage3 * x_extention_stage3) >> 31;
+            x_power_stage4 <= (x_power_stage3 * x_extention_stage3) >>> 31;
         end
     end
 
@@ -186,7 +197,7 @@ module exp_pipeline(
         if (!rst) begin
             term4 <= 0;
         end else if (valid_stage3) begin
-            term4 <= (x_power_stage3 * x_extention_stage3 * multiplier_2) >> 47;
+            term4 <= (x_power_stage3 * x_extention_stage3 * multiplier_2) >>> 46;
         end
     end
 
@@ -195,7 +206,7 @@ module exp_pipeline(
         if (!rst) begin
             temp_stage4 <= 0;
         end else if (valid_stage3) begin
-            temp_stage4 <= temp_stage3 - term3;
+            temp_stage4 <= temp_stage3 + term3;
         end
     end
 
@@ -222,7 +233,7 @@ module exp_pipeline(
         if (!rst) begin
             x_power_stage5 <= 0;
         end else if (valid_stage4) begin
-            x_power_stage5 <= (x_power_stage4 * x_extention_stage4) >> 31;
+            x_power_stage5 <= (x_power_stage4 * x_extention_stage4) >>> 31;
         end
     end
 
@@ -231,7 +242,7 @@ module exp_pipeline(
         if (!rst) begin
             term5 <= 0;
         end else if (valid_stage4) begin
-            term5 <= (x_power_stage4 * x_extention_stage4 * multiplier_3) >> 47;
+            term5 <= (x_power_stage4 * x_extention_stage4 * multiplier_3) >>> 46;
         end
     end
 
@@ -258,7 +269,7 @@ module exp_pipeline(
         if (!rst) begin
             final_result <= 0;
         end else if (valid_stage5) begin
-            final_result <= temp_stage5 - term5;
+            final_result <= temp_stage5 + term5;
         end
     end
 
@@ -276,7 +287,8 @@ module exp_pipeline(
         if (!rst) begin
             exp_x <= 0;
         end else if (valid_stage6) begin
-            exp_x <= { 1'd0, final_result[30:0] };
+            // exp_x <= { 1'd0, final_result[30:0] };
+            exp_x <= (final_result[30:0] == 31'd0)? 32'h7FFFFFFF : { 1'd0, final_result[30:0] };
         end
     end
 
@@ -289,3 +301,79 @@ module exp_pipeline(
         end
     end
 endmodule
+
+// module exp_pipeline(
+//     input wire clk,
+//     input wire rst,
+//     input wire [31:0] x,
+//     input wire [3:0] integer_bits,
+//     input wire input_valid,
+//     output reg [31:0] exp_x,
+//     output reg output_valid
+// );
+
+//     localparam IDLE = 0, CALC = 1, DONE = 2, INIT = 3;
+//     reg [1:0] state = IDLE;
+//     reg [2:0] i = 0;
+
+//     reg [36:0] x_extention;
+//     reg [36:0] temp; // result reg
+//     reg [73:0] x_power;
+//     reg [73:0] term;
+
+//     reg [15:0] multiplier [0:5];
+
+//     always @(posedge clk) begin
+//         if (!rst) begin
+//             state <= IDLE;
+//             temp <= 37'd0;
+//             x_power <= 74'd0;
+//             term <= 74'd0;
+//             i <= 0;
+//             x_extention <= 37'd0;
+//             output_valid <= 0;
+
+//             multiplier[0] <= 16'b1000000000000000;
+//             multiplier[1] <= 16'b0010101010101010;
+//             multiplier[2] <= 16'b0000101010101010;
+//             multiplier[3] <= 16'b0000001000100010;
+//             multiplier[4] <= 0;
+//             multiplier[5] <= 0;
+//         end 
+//         else begin
+//             case(state)
+//                 IDLE: begin
+//                     output_valid <= 0;
+//                     if (input_valid) begin
+//                         x_extention <= {6'b0, x[30:0]} << integer_bits; // q -> q0
+//                         temp <= 64'd1 << 31; // initialize temp = 1
+//                         i <= 1;
+//                         state <= INIT;
+//                     end
+//                 end
+//                 INIT: begin
+//                     x_power <= (x_extention * x_extention) >>> 31;
+//                     term <= x_extention;
+//                     i <= i + 1;
+
+//                     state <= CALC;
+//                 end
+//                 CALC: begin
+//                     if (i <= 6) begin
+//                         term <= (x_power * multiplier[i-2]) >>> 16;
+//                         temp <= (i % 2 == 1) ? temp + term : temp - term;
+//                         x_power <= (x_power * x_extention) >>> 31;
+//                         i <= i + 1;
+//                     end else begin
+//                         state <= DONE;
+//                     end
+//                 end
+//                 DONE: begin
+//                     state <= IDLE;
+//                     exp_x <= temp[31] == 1 ? temp[31:0] - 1 : temp[31:0];
+//                     output_valid <= 1;
+//                 end
+//             endcase
+//         end
+//     end
+// endmodule

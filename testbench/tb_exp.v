@@ -48,50 +48,65 @@ module tb_exp;
     
     // Initialize test data
     initial begin
-        test_data[0] = 32'h80CCCCCD;  // -0.1 in Q4.27
+        // test_data[0] = 32'hFF333333;  // -0.1 in Q4.27
+        // golden_results[0] = 32'h73E0B69D;  // ~0.905 in Q0.31
+
+        // test_data[1] = 32'hFE666666;  // -0.2 in Q4.27
+        // golden_results[1] = 32'h68DB8BAC;  // ~0.819 in Q0.31
+
+        // test_data[2] = 32'hFD99999A;  // -0.3 in Q4.27
+        // golden_results[2] = 32'h5F4FB460;  // ~0.741 in Q0.31
+
+        // test_data[3] = 32'hFCCCCCCE;  // -0.4 in Q4.27
+        // golden_results[3] = 32'h55E63A3E;  // ~0.670 in Q0.31
+
+        // test_data[4] = 32'hFBFFFFFF;  // -0.5 in Q4.27
+        // golden_results[4] = 32'h4DA33613;  // ~0.607 in Q0.31
+
+        // test_data[5] = 32'hF999999A;  // -0.6 in Q4.27
+        // golden_results[5] = 32'h45B79F6D;  // ~0.548 in Q0.31
+
+        // test_data[6] = 32'hF6666666;  // -0.7 in Q4.27
+        // golden_results[6] = 32'h3F8EFD5B;  // ~0.497 in Q0.31
+
+        // test_data[7] = 32'hF3333332;  // -0.8 in Q4.27
+        // golden_results[7] = 32'h394E1E5B;  // ~0.449 in Q0.31
+        
+        // test_data[8] = 32'hF0000000;  // -0.9 in Q4.27
+        // golden_results[8] = 32'h33C2F4B2;  // ~0.406 in Q0.31
+
+        // test_data[9] = 32'hEE666666;  // -1 in Q4.27
+        // golden_results[9] = 32'h2E5F2A3C;  // ~0.368 in Q0.31
+
+        test_data[0] = 32'hFF333333;  //  in Q4.27
         golden_results[0] = 32'h73E0B69D;  // ~0.905 in Q0.31
 
-        test_data[1] = 32'h8199999A;  // -0.2 in Q4.27
-        golden_results[1] = 32'h68DB8BAC;  // ~0.819 in Q0.31
+        test_data[1] = 32'hffa12300;  // -0.04633 in Q4.27
+        golden_results[1] = 32'h7a34cd81;  // ~0.819 in Q0.31
 
-        test_data[2] = 32'h82666666;  // -0.3 in Q4.27
-        golden_results[2] = 32'h5F4FB460;  // ~0.741 in Q0.31
+        test_data[2] = 32'hfee36900;  // in Q4.27
+        golden_results[2] = 32'h6f64c6a7;  // ~0.741 in Q0.31
 
-        test_data[3] = 32'h83333333;  // -0.4 in Q4.27
-        golden_results[3] = 32'h55E63A3E;  // ~0.670 in Q0.31
+        test_data[3] = 32'hff12d780;  // in Q4.27
+        golden_results[3] = 32'h7200ee6c;  // ~0.670 in Q0.31
 
-        test_data[4] = 32'h84000000;  // -0.5 in Q4.27
-        golden_results[4] = 32'h4DA33613;  // ~0.607 in Q0.31
+        test_data[4] = 32'hfe551d80;  // -0.2085 in Q4.27
+        golden_results[4] = 32'h67eab2b0;  // ~0.607 in Q0.31
 
-        test_data[5] = 32'h84CCCCCC;  // -0.6 in Q4.27
-        golden_results[5] = 32'h45B79F6D;  // ~0.548 in Q0.31
+        test_data[5] = 32'hffa12300;  // -0.04633 in Q4.27
+        golden_results[5] = 32'h7a34cd81;  // ~0.548 in Q0.31
 
-        test_data[6] = 32'h85999999;  // -0.7 in Q4.27
-        golden_results[6] = 32'h3F8EFD5B;  // ~0.497 in Q0.31
+        test_data[6] = 32'hfe25af00;  // -0.2313 in Q4.27
+        golden_results[6] = 32'h6589a986;  // ~0.497 in Q0.31
 
-        test_data[7] = 32'h86666666;  // -0.8 in Q4.27
-        golden_results[7] = 32'h394E1E5B;  // ~0.449 in Q0.31
+        test_data[7] = 32'h0;  // in Q4.27
+        golden_results[7] = 32'h7fffffff;  // ~0.449 in Q0.31
         
-        test_data[8] = 32'h87333333;  // -0.9 in Q4.27
-        golden_results[8] = 32'h33C2F4B2;  // ~0.406 in Q0.31
+        test_data[8] = 32'hffd09180;  // -0.023166 in Q4.27
+        golden_results[8] = 32'h7d11cfce;  // ~0.406 in Q0.31
 
-        test_data[9] = 32'h88000000;  // -1 in Q4.27
-        golden_results[9] = 32'h2E5F2A3C;  // ~0.368 in Q0.31
-
-        // test_data[10] = 32'h8899999A;  // -1.1 in Q4.27
-        // golden_results[10] = 32'h294287F4;  // ~0.332 in Q0.31
-
-        // test_data[11] = 32'h89333333;  // -1.2 in Q4.27
-        // golden_results[11] = 32'h244B2E35;  // ~0.301 in Q0.31
-
-        // test_data[12] = 32'h8A000000;  // -1.5 in Q4.27
-        // golden_results[12] = 32'h1A54E9F9;  // ~0.223 in Q0.31
-
-        // test_data[13] = 32'h8ACCCCCD;  // -1.6 in Q4.27
-        // golden_results[13] = 32'h167F3B27;  // ~0.201 in Q0.31
-
-        // test_data[14] = 32'h8B666666;  // -1.7 in Q4.27
-        // golden_results[14] = 32'h12B354A6;  // ~0.183 in Q0.31
+        test_data[9] = 32'hfee36900;  // in Q4.27
+        golden_results[9] = 32'h6f64c6a7;  // ~0.368 in Q0.31
     end
     
     // Test procedure

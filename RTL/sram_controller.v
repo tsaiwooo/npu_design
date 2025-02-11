@@ -22,13 +22,21 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     input [NUM_SRAMS-1:0] gemm2_idx,
     output signed [SRAM_WIDTH_O-1:0] gemm2_data_out,
     
-    // ELEM port
+    // ELEM0 port
     input [MAX_ADDR_WIDTH-1:0] elem_addr,
-    input signed [4*C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
+    input signed [C_AXIS_TDATA_WIDTH-1:0] elem_data_in,
     input  elem_en,
     input  elem_we,
     input [NUM_SRAMS-1:0] elem_idx,
     output signed [SRAM_WIDTH_O-1:0] elem_data_out,
+
+    // ELEM1 port
+    input [MAX_ADDR_WIDTH-1:0] elem1_addr,
+    input signed [C_AXIS_TDATA_WIDTH-1:0] elem1_data_in,
+    input  elem1_en,
+    input  elem1_we,
+    input [NUM_SRAMS-1:0] elem1_idx,
+    output signed [SRAM_WIDTH_O-1:0] elem1_data_out,
 
     // axi4 input port
     input [MAX_ADDR_WIDTH-1:0] write_address,
@@ -45,7 +53,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     reg [NUM_SRAMS-1:0] en;
     reg [NUM_SRAMS-1:0] we;
     reg [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr;
-    reg [NUM_SRAMS * MAX_DATA_WIDTH - 1 : 0] data_in;
+    reg [NUM_SRAMS * INT8_WIDTH - 1 : 0] data_in;
     wire [NUM_SRAMS * SRAM_WIDTH_O - 1 : 0] data_out;
     reg signed [SRAM_WIDTH_O-1:0] each_data_out[NUM_SRAMS];
 
@@ -77,6 +85,9 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
         if(write_enable)begin
             we[axi_idx] = 1'b1;
         end
+        if(elem1_we)begin
+            we[elem1_idx] = 1'b1;
+        end
     end
 
     always @(*)begin
@@ -95,6 +106,9 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
         end
         if(write_enable)begin
             en[axi_idx] = 1'b1;
+        end
+        if(elem1_en)begin
+            en[elem1_idx] = 1'b1;
         end
 
     end
@@ -116,21 +130,27 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
         if(write_enable)begin
             addr[axi_idx * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = write_address;
         end
+        if(elem1_en)begin
+            addr[elem1_idx * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = elem1_addr;
+        end
     end
 
     always @(*)begin
-        data_in = {NUM_SRAMS * MAX_DATA_WIDTH{1'b0}};
+        data_in = {NUM_SRAMS * C_AXIS_TDATA_WIDTH{1'b0}};
         if(write_enable)begin
-            data_in[axi_idx * MAX_DATA_WIDTH +: C_AXIS_TDATA_WIDTH] = write_data;
+            data_in[axi_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = write_data;
         end
         if(gemm1_we)begin
-            data_in[gemm1_idx * MAX_DATA_WIDTH +: MAX_DATA_WIDTH] = gemm1_data_in;
+            data_in[gemm1_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = gemm1_data_in;
         end
         if(gemm2_we)begin
-            data_in[gemm2_idx * MAX_DATA_WIDTH +: MAX_DATA_WIDTH] = gemm2_data_in;
+            data_in[gemm2_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = gemm2_data_in;
         end
         if(elem_we)begin
-            data_in[elem_idx * MAX_DATA_WIDTH +: MAX_DATA_WIDTH] = elem_data_in;
+            data_in[elem_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = elem_data_in;
+        end
+        if(elem1_we)begin
+            data_in[elem1_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = elem1_data_in;
         end
     end
     

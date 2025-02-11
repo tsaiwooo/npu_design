@@ -18,7 +18,7 @@ module axi_stream_input #
 
     // SRAM control interface
     output reg                    write_enable,
-    output reg [ADDR_WIDTH-1:0]   write_address,
+    output reg [MAX_ADDR_WIDTH-1:0]   write_address,
     output reg signed [DATA_WIDTH-1:0] write_data,
     output reg [2:0]              data_type,      // 0: Image, 1: Kernel
     output reg                    data_ready,
@@ -35,7 +35,7 @@ module axi_stream_input #
     localparam ST_KER  = 2;
 
     reg [1:0] state, next_state;
-    reg [ADDR_WIDTH-1:0] address_counter;
+    reg [MAX_ADDR_WIDTH-1:0] address_counter;
 
     assign s_axis_tready = s_axis_tvalid; // always ready for data
 

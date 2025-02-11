@@ -34,11 +34,13 @@ module MultiplyByQuantizedMultiplier
     input signed [31:0] shift,
     input input_valid,
     output reg output_valid,
-    output reg signed [7:0] x_mul_by_quantized_multiplier
+    output reg signed [31:0] x_mul_by_quantized_multiplier
 );
     // reg signed [7:0] x_mul_by_quantized_multiplier;
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
+    // pipeline total stages from dequant_valid_in to exp_valid_out,但是在tflm中是一開始就判斷好存好
+    // 所以需要真正的stages, 也就是說看完整的運算式多少個cycles再加上去
     // Pipeline stage valid signals
     reg valid_stage1, valid_stage2, valid_stage3, valid_stage4;
 
@@ -47,7 +49,7 @@ module MultiplyByQuantizedMultiplier
     reg signed [31:0] left_shift_s1, right_shift_s1, right_shift_s2, right_shift_s3, right_shift_s4;
     reg signed [63:0] ab_64_s1, ab_64_s2, ab_64_s3;
     reg overflow_s1, overflow_s2, overflow_s3;
-    reg signed [31:0] nudge_s3;
+    reg signed [30:0] nudge_s3;
     reg signed [31:0] ab_x2_high32_s3, ab_x2_high32_s4;
     reg  [31:0] remainder_s4, threshold_s4;
 
@@ -221,19 +223,10 @@ module MultiplyByQuantizedMultiplier
             end else begin 
                 // x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4);
                 // tmp_result = (ab_x2_high32_s4 >>> right_shift_s4);
-                if (remainder_s4 > threshold_s4 || 
-                    (remainder_s4 == threshold_s4 && 
-                    (ab_x2_high32_s4 & 1) && 
-                    ab_x2_high32_s4 != 32'h7FFFFFFF)) begin
+                if (remainder_s4 > threshold_s4) begin
                     // x_mul_by_quantized_multiplier <= (ab_x2_high32_s4 >>> right_shift_s4) + 1;
-                    x_mul_by_quantized_multiplier <= (tmp_result >= $signed(POS_127))? POS_127 : 
-                                                    (tmp_result < $signed(NEG_128))? NEG_128 : tmp_result + 1;
-                
-                // Saturate the result to 8-bit signed integer
-                end else if(tmp_result > POS_127)begin
-                    x_mul_by_quantized_multiplier <= POS_127;
-                end else if(tmp_result < NEG_128)begin
-                    x_mul_by_quantized_multiplier <= NEG_128;
+                    x_mul_by_quantized_multiplier <= (tmp_result >= $signed(POS_127))? $signed(POS_127) : 
+                                                    (tmp_result < $signed(NEG_128))? $signed(NEG_128) : tmp_result + 1;
                 end else begin
                     x_mul_by_quantized_multiplier <= tmp_result;
                 end

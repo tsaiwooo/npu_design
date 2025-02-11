@@ -2,7 +2,7 @@
 `include "params.vh"
 
 module sram
-#(parameter DATA_WIDTH = 32, N_ENTRIES = 1024, parameter DATA_WIDTH_O = 64)
+#(parameter DATA_WIDTH = 32, N_ENTRIES = 1024, parameter DATA_WIDTH_O = 64, parameter MAX_ITER = 10)
 (
     input                           clk_i,
     input                           en_i,
@@ -27,8 +27,9 @@ module sram
             // read operaition
             end else begin
                 // data_o <= RAM[addr_i];
-                for(i=0; i<nums_input; i=i+1) begin
-                    data_o[i*DATA_WIDTH +: DATA_WIDTH] <= RAM[addr_i + i];
+                for(i=0; i<MAX_ITER; i=i+1) begin
+                    if(nums_input < MAX_ITER)
+                        data_o[i*DATA_WIDTH +: DATA_WIDTH] <= RAM[addr_i + i];
                     // if(DATA_WIDTH == 4'd16)
                     //     $display("nums_inpt = %d, i = %d, data_o = %d", nums_input, i, data_o);
                 end

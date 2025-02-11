@@ -36,7 +36,7 @@ module GEMM #
     output wire [ADDR_WIDTH-1:0]  for_conv_row,
     output wire [ADDR_WIDTH-1:0]  for_conv_col,
     // convolution output weight idx metadata
-    output [ADDR_WIDTH-1:0]  weight_idx_o,
+    output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
     output wire [17:0]  idx1_out,
     //-----------------------------------------------------
     // requant signals
@@ -47,6 +47,8 @@ module GEMM #
     // after requant
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
 );
+    localparam signed [7:0] NEG_128 = -128;
+    localparam signed [7:0] POS_127 =  127;
     // convolution signals
     wire mac_data_ready;
     wire [MAX_MACS*DATA_WIDTH-1:0] data_mac_i;
@@ -250,7 +252,9 @@ module GEMM #
         .num_groups_o(num_groups_o)
     );
 
-    
+    wire signed [31:0] requant_data_o;
+    assign mac_out = (requant_data_o >= $signed(POS_127))? $signed(POS_127):
+                     (requant_data_o <= $signed(NEG_128))? $signed(NEG_128): requant_data_o[7:0];
     MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_inst(
         .clk(clk),
         .rst(rst),
@@ -259,7 +263,7 @@ module GEMM #
         .shift(shift),
         .input_valid(requant_input_valid),
         .output_valid(requant_output_valid_o),
-        .x_mul_by_quantized_multiplier(mac_out)
+        .x_mul_by_quantized_multiplier(requant_data_o)
     ); 
 
     // requant_idx control by requant_output_valid_o 
@@ -268,7 +272,8 @@ module GEMM #
         if(!rst)begin
             requant_idx <= 0;
         end else if(requant_output_valid_o)begin
-            requant_idx <= requant_idx + 1;
+            requant_idx <= requant_idx + 1'b1;
+            $display("requant_idx = %d", requant_idx);
         end
     end
 

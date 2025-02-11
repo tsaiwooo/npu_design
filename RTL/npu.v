@@ -26,8 +26,8 @@ module npu #
     /* AXI master interface (output of the FIFO) */
     input  wire                   m00_axis_aclk,
     input  wire                   m00_axis_aresetn,
-    output wire signed [4*C_AXIS_MDATA_WIDTH-1:0]  m00_axis_tdata,
-    output wire [(2*C_AXIS_MDATA_WIDTH/8)-1 : 0]   m00_axis_tstrb, 
+    output wire signed [C_AXIS_MDATA_WIDTH-1:0]  m00_axis_tdata,
+    output wire [(C_AXIS_MDATA_WIDTH/8)-1 : 0]   m00_axis_tstrb, 
     output wire                   m00_axis_tvalid,
     input  wire                   m00_axis_tready,
     output wire                   m00_axis_tlast,
@@ -35,9 +35,16 @@ module npu #
 
     // requant signals
     input wire [31:0]            quantized_multiplier,
-    input wire signed  [31:0]     shift
+    input wire signed  [31:0]     shift,
 
+    // dequant signals(zero_point, range_radius)
+    input signed [31:0]     input_zero_point,
+    input signed  [31:0]            input_range_radius,
+    input signed  [31:0]            input_left_shift,
+    input signed  [31:0]            input_multiplier,
 
+    // output for cycles
+    output reg [31:0] cycle_count
 );
 
     reg [2:0] state = IDLE, next_state;
@@ -47,7 +54,7 @@ module npu #
 
     // axi_stream_input signals
     wire                    write_enable;
-    wire [ADDR_WIDTH-1:0]   write_address;
+    wire [MAX_ADDR_WIDTH-1:0]   write_address;
     wire signed [C_AXIS_TDATA_WIDTH-1:0] write_data;
     wire [2:0]              data_type;
     wire                    data_ready;
@@ -61,6 +68,7 @@ module npu #
     // axi_stream_output signals
     wire                   sram_out_en;
     wire [MAX_ADDR_WIDTH-1:0]  sram_out_addr;
+    wire [MAX_ADDR_WIDTH-1:0]  out_size;
 
     // convolution signals
     wire signed [C_AXIS_MDATA_WIDTH - 1 : 0] mac_out;
@@ -73,6 +81,7 @@ module npu #
     wire [ADDR_WIDTH-1:0] out_row, out_col;
     assign out_row = img_row - ker_row + 1;
     assign out_col = img_col - ker_col + 1;
+    assign out_size = out_row * out_col;
 
 
     // GEMM convolution index
@@ -80,7 +89,7 @@ module npu #
     wire [ADDR_WIDTH-1:0] conv_col;
     wire [ADDR_WIDTH-1:0] for_conv_row;
     wire [ADDR_WIDTH-1:0] for_conv_col;
-    wire [ADDR_WIDTH-1:0] weight_idx;
+    wire [MAX_ADDR_WIDTH-1:0] weight_idx;
 
 
     // SRAM OUTPUT DATA
@@ -91,6 +100,18 @@ module npu #
 
     // requant signals
     wire requant_valid_o;
+
+    // sram_controller signals
+    wire elem_en_sel;
+    wire [MAX_ADDR_WIDTH-1:0] elem_addr_sel;
+
+    // element_wise signals
+    wire signed [C_AXIS_TDATA_WIDTH-1:0] element_wise_data_o;
+    wire element_wise_valid_o;
+    wire [17:0] element_wise_idx_o;
+    reg element_wise_exp_en;
+    reg element_wise_exp_en_delay;
+    reg [17:0] element_wise_to_sram_exp_addr;
 
     // control FSM
     always @(*) begin
@@ -160,8 +181,38 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             start_output <= 1'b0;
-        end else if(idx1_out == (out_col * out_row -1) && state == COMPUTE_CONV0)begin
+        end else if(element_wise_idx_o == (out_col * out_row -1) && state == COMPUTE_CONV0)begin
             start_output <= 1'b1;
+        end
+    end
+
+    // control sram_en for element_wise
+    always @(posedge s00_axis_aclk)begin
+        if(!s00_axis_aresetn)begin
+            element_wise_exp_en <= 1'b0;
+        end else if(idx1_out == (out_col * out_row -1) && state == COMPUTE_CONV0 && element_wise_to_sram_exp_addr < (out_col * out_row -1))begin
+            element_wise_exp_en <= 1'b1;
+            $display("element_wise_exp_en = 1");
+        end else if(element_wise_to_sram_exp_addr == (out_col * out_row -1)) begin
+            element_wise_exp_en <= 1'b0;
+            $display("element_wise_exp_en = 0");
+        end 
+    end
+
+    always @(posedge s00_axis_aclk)begin
+        if(!s00_axis_aresetn)begin
+            element_wise_exp_en_delay <= 1'b0;
+        end else begin
+            element_wise_exp_en_delay <= element_wise_exp_en;
+        end
+    end
+
+    always @(posedge s00_axis_aclk)begin
+        if(!s00_axis_aresetn)begin
+            element_wise_to_sram_exp_addr <= 0;
+        end else if(element_wise_exp_en && element_wise_to_sram_exp_addr < (out_col * out_row -1))begin
+            element_wise_to_sram_exp_addr <= element_wise_to_sram_exp_addr + 1'b1;
+            $display("element_wise_to_sram_exp_addr = %d", element_wise_to_sram_exp_addr);
         end
     end
 
@@ -200,6 +251,21 @@ module npu #
         .requant_valid_o(requant_valid_o),
         .idx1_out(idx1_out)
     );
+
+    element_wise element_wise_gen
+    (
+        .clk(s00_axis_aclk),
+        .rst(s00_axis_aresetn),
+        .data_in(elem_data_out[7:0]),
+        .valid_in(element_wise_exp_en_delay),
+        .input_zero_point(input_zero_point),
+        .input_range_radius(input_range_radius),
+        .input_left_shift(input_left_shift),
+        .input_multiplier(input_multiplier),
+        .data_out(element_wise_data_o),
+        .valid_out(element_wise_valid_o),
+        .data_idx_o(element_wise_idx_o)
+    ); 
 
 
     axi_stream_input #
@@ -253,15 +319,19 @@ module npu #
         .sram_out_data_out(sram_data_out),
         // control signals
         .start_output(state == WRITE_OUTPUT),
-        .out_size(out_row * out_col)
+        .out_size(out_size)
     );
-
+    wire [MAX_ADDR_WIDTH-1:0] gemm1_addr_i;
+    assign gemm1_addr_i = (conv_row + for_conv_row) * img_col + conv_col + for_conv_col;
+    assign elem_en_sel = requant_valid_o || element_wise_exp_en;
+    assign elem_addr_sel = (requant_valid_o)? idx1_out:
+                            (element_wise_exp_en)? element_wise_to_sram_exp_addr : 1'b0;
     sram_controller sram_controller_inst
     (
         .clk(s00_axis_aclk),
         .rst(s00_axis_aresetn),
         // GEMM1 port
-        .gemm1_addr((conv_row + for_conv_row) * img_col + conv_col + for_conv_col),
+        .gemm1_addr(gemm1_addr_i),
         .gemm1_data_in(),
         .gemm1_en(state == COMPUTE_CONV0),
         .gemm1_we(1'b0),
@@ -274,15 +344,22 @@ module npu #
         .gemm2_we(1'b0),
         .gemm2_idx(GEMM1_SRAM_IDX),
         .gemm2_data_out(gemm1_data_out),
-        // ELEM port
-        .elem_addr(idx1_out),
+        // ELEM0  port
+        .elem_addr(elem_addr_sel),
         .elem_data_in(mac_out),
         // .elem_en(mac_valid_out),
         // .elem_we(mac_valid_out),
-        .elem_en(requant_valid_o),
+        .elem_en(elem_en_sel),
         .elem_we(requant_valid_o),
         .elem_idx(ELEM0_SRAM_IDX),
         .elem_data_out(elem_data_out),
+        // ELEM1 port
+        .elem1_addr(element_wise_idx_o),
+        .elem1_data_in(element_wise_data_o),
+        .elem1_en(element_wise_valid_o),
+        .elem1_we(element_wise_valid_o),
+        .elem1_idx(ELEM1_SRAM_IDX),
+        .elem1_data_out(),
         // axi4 input port
         .write_address(write_address),
         .write_data(write_data),
@@ -290,9 +367,18 @@ module npu #
         .write_enable(write_enable),
         // axi4 output port
         .sram_out_en(sram_out_en),
-        .sram_out_idx(ELEM0_SRAM_IDX),
+        .sram_out_idx(ELEM1_SRAM_IDX),
         .sram_out_addr(sram_out_addr),
         .sram_out_data(sram_data_out)
     );
+
+    // cycle count control
+    always @(posedge s00_axis_aclk) begin
+        if(!s00_axis_aresetn) begin
+            cycle_count <= 0;
+        end else if(state == COMPUTE_CONV0)begin
+            cycle_count <= cycle_count + 1;
+        end
+    end 
 
 endmodule

@@ -14,6 +14,7 @@ DESIGN_SRC = $(RTL_DIR)/$(DESIGN_FILE) $(RTL_DIR)/GEMM.v $(RTL_DIR)/element_wise
 			 $(RTL_DIR)/axi_stream_input.v $(RTL_DIR)/convolution.v $(RTL_DIR)/sram_controller.v \
 			 $(RTL_DIR)/MultiplyByQuantizedMultiplier.v $(RTL_DIR)/RoundingDivideByPOT.v \
 			 $(RTL_DIR)/exp.v $(RTL_DIR)/reciprocal_over_1.v $(RTL_DIR)/FIFO.v $(RTL_DIR)/sram_64bits.v \
+			 $(RTL_DIR)/exp_CORDIC.v $(RTL_DIR)/ADD.v $(RTL_DIR)/ADD_Element.v $(RTL_DIR)/MultiplyByQuantizedMultiplierSmallerThanOneExp.v \
 			 
 
 # DESIGN_ALL = $(RTL_DIR)/*.v
@@ -51,7 +52,7 @@ all: clean compile simulate
 # Compile the design and testbench
 compile:
 	@echo "Compiling design and testbench..."
-# $(VCS) $(VCS_FLAGS) $(INC_FLAGS) $(DEFINE_FLAGS) $(RTL_DIR)/MultiplyByQuantizedMultiplier.v  $(TB_SRC) -o $(SIMV)
+# $(VCS) $(VCS_FLAGS) $(INC_FLAGS) $(DEFINE_FLAGS) $(RTL_DIR)/ADD.v $(RTL_DIR)/ADD_Element.v  $(TB_SRC) -o $(SIMV)
 	$(VCS) $(VCS_FLAGS) $(INC_FLAGS) $(DEFINE_FLAGS) $(DESIGN_SRC)  $(TB_SRC) -o $(SIMV)
 
 # Run the simulation
@@ -62,7 +63,7 @@ simulate: compile
 # View the waveform in Verdi
 verdi:
 	@echo "Launching Verdi..."
-# echo "$(RTL_DIR)/FIFO.v " > filelist.f
+# echo "$(RTL_DIR)/ADD.v " > filelist.f
 	echo "$(DESIGN_SRC) " > filelist.f
 	echo "$(TB_SRC)" >> filelist.f
 	$(VERDI) $(VERDI_FLAGS) -ssf $(VERDI_DUMP) -f filelist.f &

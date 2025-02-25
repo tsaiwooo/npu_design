@@ -1,3 +1,6 @@
+// ************************************************
+// run conv + requant + sram + dequant + exp + sram
+// ************************************************
 `timescale 1ns / 1ps
 
 module tb_npu3();
@@ -7,7 +10,7 @@ module tb_npu3();
 //----------------------------------------------
 parameter PERIOD              = 10;
 parameter MAX_MACS            = 64;
-parameter ADDR_WIDTH          = 18;
+parameter ADDR_WIDTH          = 13;
 parameter C_AXIS_TDATA_WIDTH  = 8;
 parameter C_AXIS_MDATA_WIDTH  = 8;
 parameter MAX_CHANNELS        = 64;
@@ -22,21 +25,23 @@ localparam signed NEG_12 = -12;
 // 2) Variables
 //----------------------------------------------
 integer img_file, weight_file, scan_result;
-reg [ADDR_WIDTH-1:0] img_row, img_col, ker_row, ker_col;
-integer i, j, m, n;
+reg [ADDR_WIDTH-1:0] img_batch,img_row, img_col,img_in_channel, ker_output_channel ,ker_row, ker_col;
+reg [3:0] stride_h, stride_w;
+reg padding;
+integer b, i, j, m, n, oc,ic;
 
 //----------------------------------------------
 // 3) Buffers and arrays
 //----------------------------------------------
 
 // (A) 存放 image / weight
-reg signed [C_AXIS_TDATA_WIDTH-1:0] img_buffer    [0:2**ADDR_WIDTH-1];
+reg signed [C_AXIS_TDATA_WIDTH-1:0] img_buffer    [0:2**18-1];
 reg signed [C_AXIS_TDATA_WIDTH-1:0] weight_buffer [0:2**ADDR_WIDTH-1];
 
 // (B) 新增：保存「卷積尚未 Requant」(累加) 與「Requant 後」的預期值
-reg signed [31:0] sum_before_requant [0:2**ADDR_WIDTH-1];  // Requant 前的累加
-reg signed [C_AXIS_MDATA_WIDTH-1:0] expected_output [0:2**ADDR_WIDTH-1]; // Requant 後的結果
-reg signed [31:0] exp_output [0:2**ADDR_WIDTH-1]; // dequant+exp 後的結果
+reg signed [31:0] sum_before_requant [0:2**18-1];  // Requant 前的累加
+reg signed [C_AXIS_MDATA_WIDTH-1:0] expected_output [0:2**18-1]; // Requant 後的結果
+reg signed [31:0] exp_output [0:2**18-1]; // dequant+exp 後的結果
 
 //----------------------------------------------
 // 4) Inputs to NPU
@@ -46,7 +51,7 @@ reg   s00_axis_aresetn = 1;
 reg   [C_AXIS_TDATA_WIDTH-1:0] s00_axis_tdata = 0;
 reg   s00_axis_tvalid  = 0;
 reg   s00_axis_tlast   = 0;
-reg   [2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser = 0;
+reg   [4*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser = 0;
 reg   m00_axis_aclk    = 1'b0;
 reg   m00_axis_aresetn = 1;
 reg   m00_axis_tready  = 0;
@@ -149,16 +154,19 @@ npu #(
 initial begin
     img_file = $fopen("image_data.txt", "r");
     weight_file = $fopen("kerenl_data.txt", "r");
-
+    stride_h = 1;
+    stride_w = 1;
+    padding = 0;
     // 讀取 image row/col
-    scan_result = $fscanf(img_file, "%d %d\n", img_row, img_col);
-    for (i = 0; i < img_row * img_col; i = i + 1) begin
+    scan_result = $fscanf(img_file, "%d %d %d %d\n", img_batch , img_row, img_col, img_in_channel);
+    for (i = 0; i < img_batch * img_col * img_row * img_in_channel; i = i + 1) begin
         scan_result = $fscanf(img_file, "%d\n", img_buffer[i]);
+        $display("img_buffer[%d] = %d", i, img_buffer[i]);
     end
 
     // 讀取 weight row/col
-    scan_result = $fscanf(weight_file, "%d %d\n", ker_row, ker_col);
-    for (i = 0; i < ker_row * ker_col; i = i + 1) begin
+    scan_result = $fscanf(weight_file, "%d %d %d\n", ker_output_channel , ker_row, ker_col);
+    for (i = 0; i < ker_output_channel * ker_col * ker_row * img_in_channel; i = i + 1) begin
         scan_result = $fscanf(weight_file, "%d\n", weight_buffer[i]);
     end
 
@@ -174,12 +182,12 @@ task send_image;
 begin
     $display("img_row = %d, img_col = %d, last = %d", img_row, img_col, img_row * img_col - 1);
     @(posedge s00_axis_aclk);
-    for (i = 0; i < img_row * img_col; i = i + 1) begin
+    for (i = 0; i < img_row * img_col * img_in_channel * img_batch; i = i + 1) begin
         s00_axis_tdata  = img_buffer[i];
         s00_axis_tvalid = 1;
-        s00_axis_tlast  = (i == img_row * img_col - 1);
+        s00_axis_tlast  = (i == img_row * img_col * img_in_channel - 1);
         tmp = 1;
-        s00_axis_tuser  = {img_row, img_col, tmp[NUM_CHANNELS_WIDTH-1:0]};  // metadata in tuser
+        s00_axis_tuser  = { img_batch , img_col, img_row, img_in_channel, tmp[NUM_CHANNELS_WIDTH-1:0]};  // metadata in tuser
         wait(s00_axis_tready);
         @(posedge s00_axis_aclk);
     end
@@ -195,12 +203,12 @@ task send_weight;
 begin
     $display("ker_row = %d, ker_col = %d, last = %d", ker_row, ker_col, ker_row * ker_col - 1);
     @(posedge s00_axis_aclk);
-    for (i = 0; i < ker_row * ker_col; i = i + 1) begin
+    for (i = 0; i < ker_output_channel * ker_row * ker_col * img_in_channel; i = i + 1) begin
         s00_axis_tdata  = weight_buffer[i];
         s00_axis_tvalid = 1;
-        s00_axis_tlast  = (i == ker_row * ker_col - 1);
+        s00_axis_tlast  = (i == ker_row * ker_col * ker_output_channel * img_in_channel - 1);
         tmp = 1;
-        s00_axis_tuser  = {ker_row, ker_col, tmp[NUM_CHANNELS_WIDTH-1:0]};
+        s00_axis_tuser  = { padding, stride_h , stride_w , ker_row, ker_col, ker_output_channel, tmp[NUM_CHANNELS_WIDTH-1:0]};
         wait(s00_axis_tready);
         @(posedge s00_axis_aclk);
     end
@@ -281,29 +289,88 @@ begin
     reg signed [4*C_AXIS_MDATA_WIDTH-1:0] sum;
     reg signed [31:0] tmp_result;
     integer out_rows, out_cols;
+    integer pad_h, pad_w;
     integer idx;
 
-    out_rows = (img_row - ker_row + 1);
-    out_cols = (img_col - ker_col + 1);
+    // 根據 padding 信號決定上下左右需要補零的量
+    if (padding) begin
+        // SAME padding 假設補零量為 (ker_dim - 1)/2
+        pad_h = (ker_row - 1) / 2;
+        pad_w = (ker_col - 1) / 2;
+    end else begin
+        pad_h = 0;
+        pad_w = 0;
+    end
+    if (padding) begin
+        // SAME: 輸出尺寸等於 ceil(img_dim / stride)
+        out_rows = (img_row + stride_h - 1) / stride_h;
+        out_cols = (img_col + stride_w - 1) / stride_w;
+    end else begin
+        // VALID: 輸出尺寸 = floor((img_dim - ker_dim + 1) / stride)
+        out_rows = (img_row - ker_row + 1) / stride_h;
+        out_cols = (img_col - ker_col + 1) / stride_w;
+    end
 
-    for (i = 0; i < out_rows; i = i + 1) begin
-        for (j = 0; j < out_cols; j = j + 1) begin
-            sum = 0;
-            // 卷積 (MAC 累加)
-            for (m = 0; m < ker_row; m = m + 1) begin
-                for (n = 0; n < ker_col; n = n + 1) begin
-                    sum = sum + img_buffer[(i + m) * img_col + (j + n)] *
-                                  weight_buffer[m * ker_col + n];
+    // 遍歷每個 batch（假設 img_batch 為批次數）
+    for (b = 0; b < img_batch; b = b + 1) begin
+        // 遍歷輸出高度與寬度
+        for (i = 0; i < out_rows; i = i + 1) begin
+            for (j = 0; j < out_cols; j = j + 1) begin
+                // 遍歷每個 output channel (ker_output_channel)
+                for (oc = 0; oc < ker_output_channel; oc = oc + 1) begin
+                    sum = 0;
+                // 進行卷積運算 (MAC 累加)，遍歷 kernel 高度、寬度及所有輸入 channel
+                for (m = 0; m < ker_row; m = m + 1) begin
+                    for (n = 0; n < ker_col; n = n + 1) begin
+                        for (ic = 0; ic < img_in_channel; ic = ic + 1) begin
+                            // 計算輸入資料位置：
+                            // 對應 NHWC 排列，輸入行位置 = i*stride_h - pad_h + m
+                            // 輸入列位置 = j*stride_w - pad_w + n
+                            // offset = (((b * img_row + (i*stride_h - pad_h + m)) * img_col + (j*stride_w - pad_w + n)) * img_in_channel) + ic
+                            if (((i * stride_h - pad_h + m) < 0) ||
+                                ((i * stride_h - pad_h + m) >= img_row) ||
+                                ((j * stride_w - pad_w + n) < 0) ||
+                                ((j * stride_w - pad_w + n) >= img_col)) begin
+                            // 超出範圍，視作 0
+                                sum = sum + 0;
+                            end else begin
+                                if(i==0 && j==0 && oc==2)
+                                    $display("img_buffer[%d] = %d, weight_buffer[%d] = %d, sum = %d", (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic, img_buffer[ (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic], ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic, weight_buffer[ ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic],sum);
+                                sum = sum + img_buffer[ (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic ]
+                                        *
+                                        // 計算濾波器位置 (OHWC排列)
+                                        // kernel 排序： [output_channel, ker_row, ker_col, in_channel]
+                                        // offset = ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic
+                                        weight_buffer[ ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic ];
+                            end
+                        end
+                    end
+                end
+
+                // 計算輸出位置 offset (NHWC排列)
+                // 輸出尺寸 = [img_batch, out_rows, out_cols, ker_output_channel]
+                // offset = (((b * out_rows + i) * out_cols + j) * ker_output_channel) + oc
+                idx = (((b * out_rows + i) * out_cols + j) * ker_output_channel) + oc;
+                
+                // ========================================================
+                // [A] 紀錄「requant前」的累加值 sum 到 sum_before_requant[]
+                // ========================================================
+                sum_before_requant[idx] = sum;
+                $display("sum_before_requant[%d] = %d", idx, sum);
+                
+                // ========================================================
+                // [B] 透過 golden_multiply_by_quantized_multiplier 進行 requant
+                //     並 Clamp 結果至 int8 範圍 (-128 ~ 127)
+                // ========================================================
+                tmp_result = golden_multiply_by_quantized_multiplier(sum, test_q_multiplier, test_shift);
+                if (tmp_result > 127)
+                    expected_output[idx] = $signed(POS_127);
+                else if (tmp_result < -128)
+                    expected_output[idx] = $signed(NEG_128);
+                else
+                    expected_output[idx] = tmp_result;
                 end
             end
-            idx = i * out_cols + j;
-            // [A] 紀錄「requant前」的 sum
-            sum_before_requant[idx] = sum;
-            // [B] 透過 tb_do_requant計算 "expected_output"
-            tmp_result = golden_multiply_by_quantized_multiplier(sum, test_q_multiplier, test_shift);
-            expected_output[idx] = (tmp_result > 127)? $signed(POS_127):
-                         (tmp_result < -128)? $signed(NEG_128): tmp_result;
-            // expected_output[idx]    = tmp_result;
         end
     end
 end
@@ -323,7 +390,7 @@ task compute_exp_after_requant;
     integer total_elements;
     reg signed [31:0] requant_minus_zero_point;
 begin
-    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
+    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1) * ker_output_channel;
 
     for(idx = 0; idx < total_elements; idx = idx + 1) begin
         // [A] Dequant
@@ -346,7 +413,7 @@ begin
             input_valid_exp = 0;
 
             wait(output_valid_exp);
-            $display("exp_x = %h", exp_x);
+            $display("exp_x[%d] = %h", idx,exp_x);
             exp_output[idx] = exp_x;
         end
 
@@ -378,7 +445,7 @@ task check_output;
     reg [7:0]  received_strb;   // 用於儲存位元組使能信號
     reg [7:0]  received_byte;   // 臨時儲存提取的有效位元組
 begin
-    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1);
+    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1) * ker_output_channel;
     idx = 0;
     
     @(negedge m00_axis_aclk);

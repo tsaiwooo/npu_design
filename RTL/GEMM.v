@@ -26,6 +26,11 @@ module GEMM #
     input  wire [ADDR_WIDTH-1:0]  img_col,
     input  wire [ADDR_WIDTH-1:0]  ker_row,
     input  wire [ADDR_WIDTH-1:0]  ker_col,
+    input  wire [ADDR_WIDTH-1:0]  in_channel,
+    input  wire [ADDR_WIDTH-1:0]  out_channel,
+    input  wire [3:0]             stride_h,
+    input  wire [3:0]             stride_w,
+    input  wire                   padding,
     // convolution img and kernel data
     input  wire [SRAM_WIDTH_O-1:0]  data_in,
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
@@ -35,8 +40,9 @@ module GEMM #
     // convolution output image metadata
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
-    output wire [ADDR_WIDTH-1:0]  for_conv_row,
-    output wire [ADDR_WIDTH-1:0]  for_conv_col,
+    output wire [5:0]  input_data_idx,
+    // output wire [ADDR_WIDTH-1:0]  for_conv_row,
+    // output wire [ADDR_WIDTH-1:0]  for_conv_col,
     // convolution output weight idx metadata
     output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
     // output wire [17:0]  idx1_out,
@@ -243,6 +249,11 @@ module GEMM #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .in_channel(in_channel),
+        .output_channel(out_channel),
+        .stride_col(stride_h),
+        .stride_row(stride_w),
+        .padding(padding),
         // img and kernel data
         .data_in(data_in),
         .weight_in(weight_in),
@@ -259,8 +270,9 @@ module GEMM #
         // output metadata
         .conv_row(conv_row),
         .conv_col(conv_col),
-        .for_conv_row(for_conv_row),
-        .for_conv_col(for_conv_col),
+        // .for_conv_row(for_conv_row),
+        // .for_conv_col(for_conv_col),
+        .input_data_idx(input_data_idx),
         .weight_idx_o(weight_idx_o)
         // .idx1_out(idx1_out)
     );
@@ -289,6 +301,11 @@ module GEMM #
     wire signed [QUANT_WIDTH-1:0] requant_32bits_out_array[0:MAX_VECTOR_SIZE-1];
     wire signed [DATA_WIDTH-1:0] requant_8bits_out_array[0:MAX_VECTOR_SIZE-1];
 
+    // always @(posedge clk) begin
+    //     if(mac_valid_out)begin
+    //         $display("mac_valid_out, groups = %d", num_groups_o);
+    //     end
+    // end
 genvar requant_muodule_idx; 
 generate
     for(requant_muodule_idx = 0; requant_muodule_idx < MAX_VECTOR_SIZE; requant_muodule_idx = requant_muodule_idx + 1)begin: requant_vector   
@@ -325,5 +342,14 @@ endgenerate
 
     // assign idx1_out = requant_idx;
 
+    // DEBUG INFO
+    always @(posedge clk)begin
+        if(mac_valid_out)begin
+            $display("mac_valid_out: %h, groups = %d",mac_out_to_conv_i, num_groups_o);
+        end
+        if(mac_data_ready) begin
+            $display("data_mac_i: %h, weight_mac_i: %h", data_in, weight_in);
+        end
+    end
     
 endmodule

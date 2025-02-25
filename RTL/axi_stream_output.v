@@ -22,7 +22,9 @@ module axi_stream_output #
 
     // control_signals
     input  wire                   start_output,
-    input  wire [MAX_ADDR_WIDTH-1:0]  out_size
+    input  wire [MAX_ADDR_WIDTH-1:0]  out_size,
+    // groups
+    input  wire [2:0]           groups 
 );
 
     reg [MAX_ADDR_WIDTH-1:0] read_counter;
@@ -75,7 +77,7 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tvalid <= 1'b0;
         end else if (start_condition) begin
-            if (6*read_counter >= (out_size - 1)) begin
+            if (groups*read_counter >= (out_size - 1)) begin
                 m_axis_tvalid <= 1'b0;
             end else if (data_ready) begin
                 m_axis_tvalid <= 1'b1;
@@ -114,7 +116,7 @@ module axi_stream_output #
         if (reset_condition) begin
             read_counter <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && data_ready) begin
-            if (6*read_counter < (out_size - 1)) begin
+            if (groups*read_counter < (out_size - 1)) begin
                 read_counter <= read_counter + 1;
             end else begin
                 read_counter <= {MAX_ADDR_WIDTH{1'b0}};
@@ -128,7 +130,7 @@ module axi_stream_output #
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
             output_done <= 1'b0;
-        end else if (start_condition && data_ready && (6*read_counter >= (out_size - 1))) begin
+        end else if (start_condition && data_ready && (groups*read_counter >= (out_size - 1))) begin
             output_done <= 1'b1;
         end else begin
             output_done <= 1'b0;

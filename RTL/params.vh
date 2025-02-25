@@ -41,4 +41,9 @@ localparam sram_64bits_depth = 128;
 
 // control sram parameters
 localparam SRAM_WIDTH_O = 64;
+
+// data size
+localparam INT8_SIZE = 8;
+localparam INT32_SIZE = 32;
+localparam INT64_SIZE = 64;
 `endif  // PARAMS_VH

@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 `include "params.vh"
-
+// 目前傳送資料過去後卡住, dut運算有問題
 module npu #
 (
     parameter MAX_MACS = 64,
@@ -21,7 +21,7 @@ module npu #
     input  wire                   s00_axis_tvalid,
     output wire                   s00_axis_tready,
     input  wire                   s00_axis_tlast,
-    input  wire [2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  
+    input  wire [4*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  
 
     /* AXI master interface (output of the FIFO) */
     input  wire                   m00_axis_aclk,
@@ -65,6 +65,11 @@ module npu #
     wire [ADDR_WIDTH-1:0]   ker_row;
     wire [ADDR_WIDTH-1:0]   ker_col;
     wire [NUM_CHANNELS_WIDTH-1:0] num_channels;
+    wire [3:0]             stride_h, stride_w;
+    wire [ADDR_WIDTH-1:0]   in_channel, out_channel;
+    wire                    padding ;
+    wire [5:0]              input_data_idx;
+    wire [ADDR_WIDTH-1:0]   batch;
 
 
     // axi_stream_output signals
@@ -81,21 +86,21 @@ module npu #
 
     // output size
     wire [ADDR_WIDTH-1:0] out_row, out_col;
-    assign out_row = img_row - ker_row + 1;
-    assign out_col = img_col - ker_col + 1;
-    assign out_size = out_row * out_col;
+    assign out_row = (img_row - ker_row + 1) / stride_w;
+    assign out_col = (img_col - ker_col + 1) / stride_h;
+    assign out_size = out_row * out_col * out_channel;
 
 
     // GEMM convolution index
     wire [ADDR_WIDTH-1:0] conv_row;
     wire [ADDR_WIDTH-1:0] conv_col;
-    wire [ADDR_WIDTH-1:0] for_conv_row;
-    wire [ADDR_WIDTH-1:0] for_conv_col;
+    // wire [ADDR_WIDTH-1:0] for_conv_row;
+    // wire [ADDR_WIDTH-1:0] for_conv_col;
     wire [MAX_ADDR_WIDTH-1:0] weight_idx;
 
     // sram_controller signals
     wire [MAX_ADDR_WIDTH-1:0] gemm1_addr_i;
-    assign gemm1_addr_i = (conv_row + for_conv_row) * img_col + conv_col + for_conv_col;
+    assign gemm1_addr_i = (conv_col * img_row + conv_row) * in_channel + input_data_idx;
 
     // SRAM OUTPUT DATA
     wire signed [SRAM_WIDTH_O-1:0] gemm0_data_out;
@@ -145,7 +150,7 @@ module npu #
                 next_state = (start_output)? WRITE_OUTPUT : COMPUTE_CONV0;
             end
             WRITE_OUTPUT: begin
-                if (sram_out_addr >= out_row * out_col)begin
+                if (sram_out_addr >= out_size)begin
                     next_state = IDLE;
                 end 
             end
@@ -169,7 +174,7 @@ module npu #
             GEMM_en <= 1'b0;
         end else if(state == COMPUTE_CONV0)begin
             GEMM_en <= 1'b1;
-        end else if(6*idx1_out >= (out_col * out_row -1))begin
+        end else if(stored_num_groups_o*idx1_out >= out_size -1)begin
             GEMM_en <= 1'b0;
         end
     end
@@ -178,7 +183,7 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             start_output <= 1'b0;
-        end else if(6*idx1_out >= (out_col * out_row -1) && state == COMPUTE_CONV0)begin
+        end else if(stored_num_groups_o*idx1_out >= (out_size -1) && state == COMPUTE_CONV0)begin
             start_output <= 1'b1;
         end
     end
@@ -200,6 +205,11 @@ module npu #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .stride_h(stride_h),
+        .stride_w(stride_w),
+        .in_channel(in_channel),
+        .out_channel(out_channel),
+        .padding(padding),
         // img and kernel data
         .data_in(gemm0_data_out),
         .weight_in(gemm1_data_out),
@@ -209,8 +219,9 @@ module npu #
         // output metadata
         .conv_row(conv_row),
         .conv_col(conv_col),
-        .for_conv_row(for_conv_row),
-        .for_conv_col(for_conv_col),
+        .input_data_idx(input_data_idx),
+        // .for_conv_row(for_conv_row),
+        // .for_conv_col(for_conv_col),
         .weight_idx_o(weight_idx),
         // quantized multiplier and shift given by testbench temporarily
         .quantized_multiplier(quantized_multiplier),
@@ -246,6 +257,12 @@ module npu #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .batch(batch),
+        .stride_h(stride_h),
+        .stride_w(stride_w),
+        .in_channel(in_channel),
+        .output_channel(out_channel),
+        .padding(padding),
         .num_channels(num_channels)
     );
 
@@ -272,7 +289,8 @@ module npu #
         .sram_out_data_out(sram_data_out),
         // control signals
         .start_output(state == WRITE_OUTPUT),
-        .out_size(out_size)
+        .out_size(out_size),
+        .groups(stored_num_groups_o)
     );
 
     sram_controller sram_controller_inst
@@ -330,7 +348,7 @@ module npu #
         .valid_out(exp_valid_o),
         .idx1_out(idx1_out)
     );
-
+    
     // sram_result addr_i 協定, 可能是用來儲存or讀取
     assign sram_result_addr = (sram_out_en)? sram_out_addr : 
                               (exp_valid_o)? idx1_out : 0;
@@ -353,9 +371,15 @@ module npu #
     always @(posedge s00_axis_aclk) begin
         if(!s00_axis_aresetn) begin
             cycle_count <= 0;
-        end else if(state == COMPUTE_CONV0 || state == WRITE_OUTPUT)begin
+        end else if(state == COMPUTE_CONV0)begin
             cycle_count <= cycle_count + 1;
         end
     end 
 
+    // DEBUG INFO
+    always @(posedge s00_axis_aclk)begin
+        if(exp_valid_o)begin
+            $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o);
+        end
+    end
 endmodule

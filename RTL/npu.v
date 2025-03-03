@@ -86,21 +86,25 @@ module npu #
 
     // output size
     wire [ADDR_WIDTH-1:0] out_row, out_col;
+    wire [8:0]            patch;
     assign out_row = (img_row - ker_row + 1) / stride_w;
     assign out_col = (img_col - ker_col + 1) / stride_h;
     assign out_size = out_row * out_col * out_channel;
-
+    assign patch = ker_row * in_channel;
 
     // GEMM convolution index
     wire [ADDR_WIDTH-1:0] conv_row;
     wire [ADDR_WIDTH-1:0] conv_col;
-    // wire [ADDR_WIDTH-1:0] for_conv_row;
-    // wire [ADDR_WIDTH-1:0] for_conv_col;
+    wire [ADDR_WIDTH-1:0] for_conv_row;
+    wire [ADDR_WIDTH-1:0] for_conv_col;
     wire [MAX_ADDR_WIDTH-1:0] weight_idx;
+    wire [8:0]            input_data_cur_idx;
 
     // sram_controller signals
     wire [MAX_ADDR_WIDTH-1:0] gemm1_addr_i;
-    assign gemm1_addr_i = (conv_col * img_row + conv_row) * in_channel + input_data_idx;
+    // assign gemm1_addr_i = (conv_col * img_row + conv_row) * in_channel + input_data_idx;
+    assign gemm1_addr_i = (ker_col == 1'b1 && ker_row == 1'b1)? (conv_col * img_row + conv_row) * in_channel + input_data_idx :
+                        (((conv_col + for_conv_col) * img_row) + conv_row ) * in_channel + (input_data_cur_idx - for_conv_col * patch);
 
     // SRAM OUTPUT DATA
     wire signed [SRAM_WIDTH_O-1:0] gemm0_data_out;
@@ -170,7 +174,7 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             GEMM_en <= 1'b0;
-        end else if(conv_row == out_row)begin
+        end else if(conv_col >= (img_col - ker_col + 1) && conv_row >= (img_row - ker_row + 1))begin
             GEMM_en <= 1'b0;
         end else if(state == COMPUTE_CONV0)begin
             GEMM_en <= 1'b1;
@@ -220,8 +224,9 @@ module npu #
         .conv_row(conv_row),
         .conv_col(conv_col),
         .input_data_idx(input_data_idx),
-        // .for_conv_row(for_conv_row),
-        // .for_conv_col(for_conv_col),
+        .for_conv_row(for_conv_row),
+        .for_conv_col(for_conv_col),
+        .input_data_cur_idx(input_data_cur_idx),
         .weight_idx_o(weight_idx),
         // quantized multiplier and shift given by testbench temporarily
         .quantized_multiplier(quantized_multiplier),
@@ -379,7 +384,7 @@ module npu #
     // DEBUG INFO
     always @(posedge s00_axis_aclk)begin
         if(exp_valid_o)begin
-            $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o);
+            $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d, conv_row = %d, conv_col = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o,conv_row,conv_col);
         end
     end
 endmodule

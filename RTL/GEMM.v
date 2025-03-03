@@ -41,8 +41,9 @@ module GEMM #
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
     output wire [5:0]  input_data_idx,
-    // output wire [ADDR_WIDTH-1:0]  for_conv_row,
-    // output wire [ADDR_WIDTH-1:0]  for_conv_col,
+    output wire [ADDR_WIDTH-1:0]  for_conv_row,
+    output wire [ADDR_WIDTH-1:0]  for_conv_col,
+    output wire [8:0]             input_data_cur_idx,
     // convolution output weight idx metadata
     output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
     // output wire [17:0]  idx1_out,
@@ -113,127 +114,6 @@ module GEMM #
         end
     end
 
-    // FIFO FSM control
-    // always @(posedge clk) begin
-    //     if (!rst) begin
-    //         FIFO_state <= FIFO_idle;
-    //     end else begin
-    //         FIFO_state <= next_FIFO_state;
-    //     end
-    // end
-
-    // always @(*) begin
-    //     case(FIFO_state)
-    //         FIFO_idle: begin
-    //             next_FIFO_state = (!fifo_empty)? FIFO_read: FIFO_idle;
-    //         end
-    //         FIFO_read: begin
-    //             next_FIFO_state = FIFO_requant;
-    //         end
-    //         FIFO_requant: begin
-    //             if(groups_counter == (cur_num_groups-1) && !fifo_empty)begin
-    //                 next_FIFO_state = FIFO_read;
-    //             end else if(groups_counter == (cur_num_groups-1) && fifo_empty)begin
-    //                 next_FIFO_state = FIFO_idle;
-    //             end else if(groups_counter < (cur_num_groups-1))begin
-    //                 next_FIFO_state = FIFO_requant;
-    //             end
-    //         end
-    //         default: begin
-    //             next_FIFO_state = FIFO_idle;
-    //         end
-    //     endcase
-    // end
-
-    // // FIFO write logic control
-    // always @(posedge clk) begin
-    //     if (!rst) begin
-    //         fifo_wr <= 1'b0;
-    //     end else if (mac_valid_out && !fifo_full) begin
-    //         fifo_wr <= 1'b1;
-    //     end else begin
-    //         fifo_wr <= 1'b0;
-    //     end
-    // end
-
-    // // FIFO read logic control
-    // // read from FIFO and store into fifo_data_reg
-    // always @(posedge clk) begin
-    //     if (!rst) begin
-    //         fifo_rd <= 1'b0;
-    //     end else if(FIFO_state == FIFO_read)begin
-    //         fifo_rd <= 1'b1;
-    //         // $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
-    //     end else begin
-    //         fifo_rd <= 1'b0;
-    //     end 
-    // end
-
-    // // read data => store in cur_num_groups & cur_macs_out
-    // always @(*) begin
-    //     if(!rst) begin
-    //         { cur_num_groups, cur_macs_out } <= 0;
-    //     end else if(fifo_rd) begin
-    //         // 同周期 read => data_out 已經是本次讀出的資料 (zero-cycle read)
-    //         { cur_num_groups, cur_macs_out } <= fifo_dout;
-    //     end
-    // end
-
-    // // assign conv_to_requant_32b_i
-    // always @(*)begin
-    //     if(!rst)begin
-    //         conv_to_requant_32b_i <= 0;
-    //     end else if(requant_input_valid)begin
-    //         conv_to_requant_32b_i <= cur_macs_out[QUANT_WIDTH * groups_counter  +: QUANT_WIDTH];
-    //     end
-    // end
-
-    // // group counter: 計算到當前取到第幾個group, 表示我們要在fifo_data_reg取第幾個 32bits
-    // always @(posedge clk) begin
-    //     if(!rst) begin
-    //         groups_counter <= 0;
-    //     // end else if(requant_input_valid) begin
-    //     end else if(requant_input_valid) begin
-    //         groups_counter <= groups_counter + 1;
-    //     end else begin
-    //         groups_counter <= 0;
-    //     end
-    // end
-
-
-    // requant input valid signal control
-    // 1. groups_counter < num_groups_i - 1: 保持有效
-    // 2. groups_counter == 0 && rd == 1: 保持有效
-    // always @(posedge clk) begin
-    //     if(!rst) begin
-    //         requant_input_valid <= 0;
-    //     end else if(FIFO_state == FIFO_requant && groups_counter < cur_num_groups-1) begin
-    //         requant_input_valid <= 1;
-    //     end else begin
-    //         requant_input_valid <= 0;
-    //     end
-    // end
-
-
-
-    // MAC engine and MultiplyByQuantizedMultiplier pipeline FIFO buffer
-    // FIFO #
-    // (
-    //     .DATA_WIDTH(QUANT_WIDTH * MAX_GROUPS + $clog2(MAX_GROUPS+1)),
-    //     .DEPTH(131072),
-    //     .ADDR_WIDTH(18)
-    // ) mac_pipeline_fifo
-    // (
-    //     .clk(clk),
-    //     .rst(rst),
-    //     .wr(fifo_wr),
-    //     .rd(fifo_rd),
-    //     .data_in({ num_groups_o , mac_out_to_conv_i}),
-    //     .data_out(fifo_dout),
-    //     .full(fifo_full),
-    //     .empty(fifo_empty)
-    // );
-
     convolution #
     (
         .MAX_MACS(MAX_MACS),
@@ -270,8 +150,9 @@ module GEMM #
         // output metadata
         .conv_row(conv_row),
         .conv_col(conv_col),
-        // .for_conv_row(for_conv_row),
-        // .for_conv_col(for_conv_col),
+        .for_conv_row(for_conv_row),
+        .for_conv_col(for_conv_col),
+        .input_data_cur_idx(input_data_cur_idx),
         .input_data_idx(input_data_idx),
         .weight_idx_o(weight_idx_o)
         // .idx1_out(idx1_out)

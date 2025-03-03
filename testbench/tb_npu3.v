@@ -154,8 +154,8 @@ npu #(
 initial begin
     img_file = $fopen("image_data.txt", "r");
     weight_file = $fopen("kerenl_data.txt", "r");
-    stride_h = 1;
-    stride_w = 1;
+    stride_h = 2;
+    stride_w = 2;
     padding = 0;
     // 讀取 image row/col
     scan_result = $fscanf(img_file, "%d %d %d %d\n", img_batch , img_row, img_col, img_in_channel);
@@ -334,7 +334,7 @@ begin
                             // 超出範圍，視作 0
                                 sum = sum + 0;
                             end else begin
-                                if(i==0 && j==0 && oc==2)
+                                if(i==0 && j==0 && oc==10)
                                     $display("img_buffer[%d] = %d, weight_buffer[%d] = %d, sum = %d", (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic, img_buffer[ (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic], ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic, weight_buffer[ ((((oc) * ker_row + m) * ker_col + n) * img_in_channel) + ic],sum);
                                 sum = sum + img_buffer[ (((b * img_row + (i * stride_h - pad_h + m)) * img_col + (j * stride_w - pad_w + n)) * img_in_channel) + ic ]
                                         *
@@ -390,7 +390,7 @@ task compute_exp_after_requant;
     integer total_elements;
     reg signed [31:0] requant_minus_zero_point;
 begin
-    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1) * ker_output_channel;
+    total_elements = ((img_row - ker_row + 1)/stride_w) * ((img_col - ker_col + 1)/stride_h) * ker_output_channel;
 
     for(idx = 0; idx < total_elements; idx = idx + 1) begin
         // [A] Dequant
@@ -445,7 +445,7 @@ task check_output;
     reg [7:0]  received_strb;   // 用於儲存位元組使能信號
     reg [7:0]  received_byte;   // 臨時儲存提取的有效位元組
 begin
-    total_elements = (img_row - ker_row + 1) * (img_col - ker_col + 1) * ker_output_channel;
+    total_elements = (img_row - ker_row + 1)/stride_w * (img_col - ker_col + 1)/stride_h * ker_output_channel;
     idx = 0;
     
     @(negedge m00_axis_aclk);

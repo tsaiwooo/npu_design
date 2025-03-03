@@ -19,7 +19,6 @@ module convolution #
     // input metadata
     input  wire [ADDR_WIDTH-1:0]  img_row,
     input  wire [ADDR_WIDTH-1:0]  img_col,
-    input  wire [ADDR_WIDTH-1:0]  img_channel,
     input  wire [ADDR_WIDTH-1:0]  ker_row,
     input  wire [ADDR_WIDTH-1:0]  ker_col,
     input  wire [ADDR_WIDTH-1:0]  in_channel,
@@ -46,8 +45,9 @@ module convolution #
     // output image metadata
     output reg [ADDR_WIDTH-1:0]  conv_row,
     output reg [ADDR_WIDTH-1:0]  conv_col,
-    // output reg [ADDR_WIDTH-1:0]  for_conv_row,
-    // output reg [ADDR_WIDTH-1:0]  for_conv_col,
+    output  [ADDR_WIDTH-1:0]  for_conv_row,
+    output  [ADDR_WIDTH-1:0]  for_conv_col,
+    output  reg [8:0]  input_data_cur_idx,
     // output weight idx metadata
     output [5:0]                 input_data_idx,
     output [MAX_ADDR_WIDTH-1:0]  weight_idx_o
@@ -62,9 +62,15 @@ module convolution #
     assign macs_of_group = ker_col * ker_row * in_channel;
 
     reg en_delay;
-    
-    reg [ADDR_WIDTH-1:0] for_conv_row_delay;
-    reg [ADDR_WIDTH-1:0] for_conv_col_delay;
+    // for loop row & col control
+    reg [ADDR_WIDTH-1:0] for_conv_row_reg;
+    reg [ADDR_WIDTH-1:0] for_conv_col_reg;
+    reg [ADDR_WIDTH-1:0] for_conv_col_reg_delay;
+    assign for_conv_row = for_conv_row_reg;
+    assign for_conv_col = for_conv_col_reg;
+    wire [8:0] patch;
+    reg [8:0] input_data_cur_idx_delay;
+    assign patch = ker_row * in_channel;
 
     wire [6:0] shift_amount;
     wire [6:0] nums_input;
@@ -105,6 +111,9 @@ module convolution #
     assign num_groups_o = num_groups_reg;
     assign num_macs_o = num_macs_reg_all;
 
+    // for loop row & col control
+    // reg [7:0] for_conv_row, for_conv_col;
+
     // 一次可以取8個data, 其中最多可以有8 - ker_col + 1個group
     wire [2:0] groups_of_eight;
     assign groups_of_eight = MAX_GROUPS - ker_col + 1;
@@ -127,23 +136,50 @@ module convolution #
                 next_state = (en)? S_1 : S_IDLE;
             end
             S_1: begin
-                next_state = (input_idx_delay >= total_macs)? S_2 : 
-                            (conv_col == (img_col-1) && conv_row == (img_row-1))? S_IDLE: S_1;
+                if(ker_row == 1'b1) begin
+                    next_state = (input_idx_delay >= total_macs )? S_2 :
+                             (conv_col == (img_col-1) && conv_row == (img_row-1))? S_IDLE: S_1;
+                end else begin
+                    next_state = (input_data_cur_idx == patch * ker_col)? S_2 :  
+                             (conv_col+stride_col == (img_col-ker_col+1) && conv_row+stride_row == (img_row-ker_row+1))? S_IDLE: S_1;
+                end
+                // next_state = (input_idx_delay >= total_macs && ker_row == 1'b1 )? S_2 :
+                //              (conv_col == (img_col-1) && conv_row == (img_row-1) && ker_row == 1'b1)? S_IDLE:
+                //              (input_data_cur_idx == patch * ker_col)? S_2 :  
+                //              (conv_col+stride_col == (img_col-ker_col+1) && conv_row+stride_row == (img_row-ker_row+1))? S_IDLE: S_1;
             end
             S_2: begin
                 next_state = (weight_idx_delay >= (output_channel) * total_macs)? S_3: S_2;
                 // next_state = (output_channel_idx == output_channel * total_macs)? S_3: S_2;
             end
             S_3: begin
-                next_state = S_4;
+                if(ker_row == 1'b1) begin
+                    next_state = S_4;
+                end else begin
+                    next_state = (conv_col + stride_col >= img_col-1)? S_IDLE: S_4;
+                end
             end
             S_4: begin
-                next_state = ((input_idx_delay+nums_input) >= total_macs )? S_5: S_4;
+                if(ker_row == 1'b1)begin
+                    next_state = ((input_idx_delay+nums_input) >= total_macs )? S_5: S_4;
+                end else begin
+                    next_state = (input_data_cur_idx == patch * ker_col)? S_5 : S_4;
+                end
+                // next_state = ((input_idx_delay+nums_input) >= total_macs && ker_row == 1'b1)? S_5 :
+                //              (input_data_cur_idx == patch * ker_col && ker_row != 1'b1)? S_5 : S_4;
             end
             S_5: begin
                 // next_state = (weight_idx_delay == output_channel * total_macs)? S_3 : 
-                next_state = ( (conv_row + stride_row) >= (out_row) && (conv_col + stride_col) >= (out_col) && (output_channel_idx + num_groups_o) >= (output_channel-1))? S_IDLE :
-                             ((output_channel_idx + num_groups_reg) >= (output_channel-1))? S_3 : S_5;
+                if(ker_row == 1'b1)begin
+                    next_state = ( ker_row == 1'b1 && (conv_row + stride_row) >= (out_row) && (conv_col + stride_col) >= (out_col) && (output_channel_idx + num_groups_o) >= (output_channel-1))? S_IDLE :
+                                ((output_channel_idx + num_groups_reg) >= (output_channel-1))? S_3 : S_5;
+                end else begin
+                    next_state = ( (conv_row + stride_row + ker_row ) >= (img_row+1) && (conv_col + stride_col + ker_col ) >= (img_col +1 ) && (output_channel_idx + num_groups_o) >= (output_channel-1))? S_IDLE :
+                                 ((output_channel_idx + num_groups_reg) >= (output_channel-1))? S_3 : S_5;
+                end
+                // next_state =  ((conv_row + stride_row) >= (out_row) && (conv_col + stride_col) >= (out_col) && (output_channel_idx + num_groups_o) >= (output_channel-1))? S_IDLE :
+                //              ( (conv_row + stride_row + ker_row ) >= (img_row+1) && (conv_col + stride_col + ker_col ) >= (img_col +1 ) && (output_channel_idx + num_groups_o) >= (output_channel-1))? S_IDLE :
+                //              ((output_channel_idx + num_groups_reg) >= (output_channel-1))? S_3 : S_5;
             end
             default: next_state = S_IDLE;
         endcase
@@ -211,11 +247,59 @@ module convolution #
         end
     end
 
+    // for_conv_col Logic
+    always @(posedge clk)begin
+        if(!rst)begin
+            for_conv_col_reg <= 0;
+        end else if(state == S_1 || state == S_4) begin
+            if(input_data_cur_idx + nums_input < (for_conv_col_reg + 1) * patch) begin
+                for_conv_col_reg <= for_conv_col_reg;
+            end else if(input_data_cur_idx + nums_input >= (for_conv_col_reg + 1) * patch) begin
+                for_conv_col_reg <= for_conv_col_reg + 1'b1;
+            end
+        end else begin
+            for_conv_col_reg <= 0;
+        end
+    end
+
+    always @(posedge clk)begin
+        if(!rst) begin
+            for_conv_col_reg_delay <= 0;
+        end else begin
+            for_conv_col_reg_delay <= for_conv_col_reg;
+        end
+    end
+
+    // input_data_cur_idx Logic
+    always @(posedge clk)begin
+        if(!rst)begin
+            input_data_cur_idx <= 0;
+        end else if(state == S_1 || state == S_4) begin
+            if(input_data_cur_idx + nums_input < (for_conv_col_reg + 1) * patch) begin
+                input_data_cur_idx <= input_data_cur_idx + nums_input;
+            end else if(input_data_cur_idx + nums_input >= (for_conv_col_reg + 1) * patch) begin
+                input_data_cur_idx <= (for_conv_col_reg + 1) * patch;
+            end
+        end else begin
+            input_data_cur_idx <= 0;
+        end
+    end
+
+    always @(posedge clk)begin
+        if(!rst) begin
+            input_data_cur_idx_delay <= 0;
+        end else begin
+            input_data_cur_idx_delay <= input_data_cur_idx;
+        end
+    end
+
     // control convolution index
     always @(posedge clk) begin
         if (!rst) begin
             conv_col <= 0;
-        end else if (state == S_3 && conv_row + stride_row >= out_row ) begin
+        end else if (ker_row == 1'b1 && state == S_3 && conv_row + stride_row >= out_row ) begin
+            conv_col <= conv_col + stride_col;
+        end else if (state == S_3 && conv_row + stride_row  + ker_row>= img_row+1 ) begin
             conv_col <= conv_col + stride_col;
         end 
     end
@@ -224,7 +308,9 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             conv_row <= 0;
-        end else if(state == S_3 && conv_row + stride_row >= out_row) begin
+        end else if(ker_row == 1'b1 && state == S_3 && conv_row + stride_row >= out_row) begin
+            conv_row <= 0;
+        end else if(state == S_3 && conv_row + stride_row + ker_row>= img_row+1) begin
             conv_row <= 0;
         end else if (state == S_3  ) begin
             conv_row <= conv_row + stride_row;
@@ -281,16 +367,27 @@ module convolution #
 
 
     // control data_mac_o
-    integer input_mac_for_i;
+    wire [6:0] valid_count;
+    assign valid_count = ((input_data_cur_idx_delay + nums_input) <= total_macs)? nums_input: total_macs - input_data_cur_idx_delay;
+    integer input_mac_for_i,k;
     always @(posedge clk) begin
         if (!rst || !en) begin
             data_mac_o <= 0;
         end else if (en_delay) begin
-            if((state == S_1 || state == S_4) && input_idx_delay < total_macs)begin
+            if(state == S_1 || state == S_4)begin
                 // directly put data to data_mac_o due to data is continuous in sram
                 for(input_mac_for_i=0; input_mac_for_i < 8; input_mac_for_i = input_mac_for_i + 1)begin
-                    if(input_mac_for_i < num_groups_reg) 
-                        data_mac_o[input_mac_for_i*total_macs*INT8_SIZE + input_idx_delay * DATA_WIDTH +: INT64_SIZE] <= data_in;
+                    if(input_mac_for_i < num_groups_reg) begin
+                        if(ker_col == 1'b1 && ker_row == 1'b1 && input_idx_delay < total_macs) begin
+                            data_mac_o[input_mac_for_i*total_macs*INT8_SIZE + input_idx_delay * DATA_WIDTH +: INT64_SIZE] <= data_in;
+                        end else begin
+                            for(k=0; k < 8; k = k + 1)begin
+                                if(k<valid_count)
+                                    data_mac_o[input_mac_for_i*total_macs*INT8_SIZE + (input_data_cur_idx_delay + k) * DATA_WIDTH +: DATA_WIDTH] <= data_in[k*DATA_WIDTH +: DATA_WIDTH];
+                            end
+                            // data_mac_o[input_mac_for_i*total_macs*INT8_SIZE + input_data_cur_idx_delay * DATA_WIDTH +: INT64_SIZE] <= data_in;
+                        end
+                    end
                 end
             end
         end
@@ -302,7 +399,15 @@ module convolution #
             weight_idx <= 0;
         end else if (en) begin
             if(state == S_1 || state == S_2) begin
-                weight_idx <= weight_idx + nums_input;
+                if(ker_row == 1'b1) begin
+                    weight_idx <= weight_idx + nums_input;
+                end else begin
+                    if(weight_idx + nums_input >= output_channel_idx * total_macs &&  !output_channel_idx[0] )begin
+                        weight_idx <= output_channel_idx * total_macs;
+                    end else begin
+                        weight_idx <= weight_idx + nums_input;
+                    end
+                end
             end else begin
                 weight_idx <= 0;
             end
@@ -318,10 +423,18 @@ module convolution #
         if (!rst) begin
             weight_start_idx <= 0;
         end else if ((S_1 || S_2) && en_delay) begin
-            if (weight_start_idx + nums_input < num_groups_reg * total_macs && weight_idx) begin
-                weight_start_idx <= weight_start_idx + nums_input;
-            end else if(weight_start_idx + nums_input >= num_groups_reg * total_macs)begin
-                weight_start_idx <= 0;
+            if(ker_row == 1'b1) begin
+                if (weight_start_idx + nums_input < num_groups_reg * total_macs && weight_idx) begin
+                    weight_start_idx <= weight_start_idx + nums_input;
+                end else if(weight_start_idx + nums_input >= num_groups_reg * total_macs)begin
+                    weight_start_idx <= 0;
+                end
+            end else begin
+                if (weight_start_idx  < num_groups_reg * total_macs && weight_idx) begin
+                    weight_start_idx <= weight_start_idx + nums_input;
+                end else if(weight_start_idx  >= num_groups_reg * total_macs)begin
+                    weight_start_idx <= 0;
+                end
             end
         end
     end
@@ -357,5 +470,8 @@ module convolution #
     //         end
     //     end
     // end
+    always @(posedge clk) begin
+        if(en) $display("state = %d", state);
+    end
 
 endmodule

@@ -53,7 +53,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 8 )
     reg [NUM_SRAMS-1:0] en;
     reg [NUM_SRAMS-1:0] we;
     reg [NUM_SRAMS * MAX_ADDR_WIDTH - 1 : 0] addr;
-    reg [NUM_SRAMS * INT8_WIDTH - 1 : 0] data_in;
+    reg [NUM_SRAMS * INT8_SIZE - 1 : 0] data_in;
     wire [NUM_SRAMS * SRAM_WIDTH_O - 1 : 0] data_out;
     reg signed [SRAM_WIDTH_O-1:0] each_data_out[NUM_SRAMS];
 

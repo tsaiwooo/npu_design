@@ -75,7 +75,7 @@ module element_wise #
         if(!rst)begin
             ele_idx <= 0;
         end else if(valid_out)begin
-            // $display("%0t: Output valid. ele_idx=%0d, data_out=%h", $time, ele_idx, data_out);
+            $display("%0t: Output valid. ele_idx=%0d, data_out=%h", $time, ele_idx, exp_data_out);
             ele_idx <= ele_idx + 1'b1;
         end
     end

@@ -24,6 +24,11 @@ module GEMM #
     input  wire [ADDR_WIDTH-1:0]  img_col,
     input  wire [ADDR_WIDTH-1:0]  ker_row,
     input  wire [ADDR_WIDTH-1:0]  ker_col,
+    input  wire [ADDR_WIDTH-1:0]  in_channel,
+    input  wire [ADDR_WIDTH-1:0]  out_channel,
+    input  wire [3:0]             stride_h,
+    input  wire [3:0]             stride_w,
+    input  wire                   padding,
     // convolution img and kernel data
     input  wire [SRAM_WIDTH_O-1:0]  data_in,
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
@@ -33,8 +38,10 @@ module GEMM #
     // convolution output image metadata
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
+    output wire [5:0]  input_data_idx,
     output wire [ADDR_WIDTH-1:0]  for_conv_row,
     output wire [ADDR_WIDTH-1:0]  for_conv_col,
+    output wire [8:0]             input_data_cur_idx,
     // convolution output weight idx metadata
     output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
     output wire [17:0]  idx1_out,
@@ -44,7 +51,7 @@ module GEMM #
     input wire [31:0] quantized_multiplier,
     input signed [31:0] shift,
     output wire requant_valid_o
-    // after requant
+    // after requantout_size
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
 );
     localparam signed [7:0] NEG_128 = -128;
@@ -72,7 +79,8 @@ module GEMM #
     localparam FIFO_idle=0, FIFO_read=1, FIFO_requant=2;
     reg [2:0] FIFO_state, next_FIFO_state;
     wire fifo_full, fifo_empty;
-    reg  fifo_wr, fifo_rd;
+    wire fifo_wr;
+    reg  fifo_rd;
     wire [QUANT_WIDTH * MAX_GROUPS + $clog2(MAX_GROUPS+1) - 1 : 0] fifo_dout;
     // current group number and mac_out from FIFO
     reg [QUANT_WIDTH * MAX_GROUPS - 1 : 0] cur_macs_out;
@@ -111,15 +119,16 @@ module GEMM #
     end
 
     // FIFO write logic control
-    always @(posedge clk) begin
-        if (!rst) begin
-            fifo_wr <= 1'b0;
-        end else if (mac_valid_out && !fifo_full) begin
-            fifo_wr <= 1'b1;
-        end else begin
-            fifo_wr <= 1'b0;
-        end
-    end
+    assign fifo_wr = (mac_valid_out && !fifo_full)? 1'b1: 1'b0;
+    // always @(posedge clk) begin
+    //     if (!rst) begin
+    //         fifo_wr <= 1'b0;
+    //     end else if (mac_valid_out && !fifo_full) begin
+    //         fifo_wr <= 1'b1;
+    //     end else begin
+    //         fifo_wr <= 1'b0;
+    //     end
+    // end
 
     // FIFO read logic control
     // read from FIFO and store into fifo_data_reg
@@ -128,7 +137,7 @@ module GEMM #
             fifo_rd <= 1'b0;
         end else if(FIFO_state == FIFO_read)begin
             fifo_rd <= 1'b1;
-            // $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
+            $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
         end else begin
             fifo_rd <= 1'b0;
         end 
@@ -211,6 +220,11 @@ module GEMM #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .in_channel(in_channel),
+        .output_channel(out_channel),
+        .stride_col(stride_h),
+        .stride_row(stride_w),
+        .padding(padding),
         // img and kernel data
         .data_in(data_in),
         .weight_in(weight_in),
@@ -229,6 +243,8 @@ module GEMM #
         .conv_col(conv_col),
         .for_conv_row(for_conv_row),
         .for_conv_col(for_conv_col),
+        .input_data_cur_idx(input_data_cur_idx),
+        .input_data_idx(input_data_idx),
         .weight_idx_o(weight_idx_o)
         // .idx1_out(idx1_out)
     );
@@ -273,7 +289,7 @@ module GEMM #
             requant_idx <= 0;
         end else if(requant_output_valid_o)begin
             requant_idx <= requant_idx + 1'b1;
-            $display("requant_idx = %d", requant_idx);
+            $display("requant_idx = %d, requant_value = %d", requant_idx,mac_out);
         end
     end
 

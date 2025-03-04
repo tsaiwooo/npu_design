@@ -21,7 +21,7 @@ module npu #
     input  wire                   s00_axis_tvalid,
     output wire                   s00_axis_tready,
     input  wire                   s00_axis_tlast,
-    input  wire [2*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  
+    input  wire [4*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s00_axis_tuser,  
 
     /* AXI master interface (output of the FIFO) */
     input  wire                   m00_axis_aclk,
@@ -63,6 +63,11 @@ module npu #
     wire [ADDR_WIDTH-1:0]   ker_row;
     wire [ADDR_WIDTH-1:0]   ker_col;
     wire [NUM_CHANNELS_WIDTH-1:0] num_channels;
+    wire [3:0]             stride_h, stride_w;
+    wire [ADDR_WIDTH-1:0]   in_channel, out_channel;
+    wire                    padding ;
+    wire [5:0]              input_data_idx;
+    wire [ADDR_WIDTH-1:0]   batch;
 
 
     // axi_stream_output signals
@@ -79,10 +84,11 @@ module npu #
 
     // output size
     wire [ADDR_WIDTH-1:0] out_row, out_col;
-    assign out_row = img_row - ker_row + 1;
-    assign out_col = img_col - ker_col + 1;
-    assign out_size = out_row * out_col;
-
+    wire [8:0]            patch;
+    assign out_row = (img_row - ker_row + 1) / stride_w;
+    assign out_col = (img_col - ker_col + 1) / stride_h;
+    assign out_size = out_row * out_col * out_channel;
+    assign patch = ker_row * in_channel;
 
     // GEMM convolution index
     wire [ADDR_WIDTH-1:0] conv_row;
@@ -90,6 +96,7 @@ module npu #
     wire [ADDR_WIDTH-1:0] for_conv_row;
     wire [ADDR_WIDTH-1:0] for_conv_col;
     wire [MAX_ADDR_WIDTH-1:0] weight_idx;
+    wire [8:0]            input_data_cur_idx;
 
 
     // SRAM OUTPUT DATA
@@ -148,7 +155,7 @@ module npu #
             //         next_state = WRITE_OUTPUT;
             // end
             WRITE_OUTPUT: begin
-                if (sram_out_addr >= out_row * out_col)begin
+                if (sram_out_addr >= out_size)begin
                     next_state = IDLE;
                 end 
             end
@@ -168,11 +175,11 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             GEMM_en <= 1'b0;
-        end else if(conv_row == out_row)begin
+        end else if(conv_col >= (img_col - ker_col + 1) && conv_row >= (img_row - ker_row + 1))begin
             GEMM_en <= 1'b0;
         end else if(state == COMPUTE_CONV0)begin
             GEMM_en <= 1'b1;
-        end else if(idx1_out == (out_col * out_row -1))begin
+        end else if(idx1_out >= (out_size -1))begin
             GEMM_en <= 1'b0;
         end
     end
@@ -181,7 +188,7 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             start_output <= 1'b0;
-        end else if(element_wise_idx_o == (out_col * out_row -1) && state == COMPUTE_CONV0)begin
+        end else if(element_wise_idx_o == (out_size-1) && state == COMPUTE_CONV0)begin
             start_output <= 1'b1;
         end
     end
@@ -190,12 +197,12 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             element_wise_exp_en <= 1'b0;
-        end else if(idx1_out == (out_col * out_row -1) && state == COMPUTE_CONV0 && element_wise_to_sram_exp_addr < (out_col * out_row -1))begin
+        end else if(idx1_out >= (out_size-1) && state == COMPUTE_CONV0 && element_wise_to_sram_exp_addr <= (out_size -1))begin
             element_wise_exp_en <= 1'b1;
-            $display("element_wise_exp_en = 1");
-        end else if(element_wise_to_sram_exp_addr == (out_col * out_row -1)) begin
+            // $display("element_wise_exp_en = 1");
+        end else if(element_wise_to_sram_exp_addr >= (out_size -1)) begin
             element_wise_exp_en <= 1'b0;
-            $display("element_wise_exp_en = 0");
+            // $display("element_wise_exp_en = 0");
         end 
     end
 
@@ -210,7 +217,7 @@ module npu #
     always @(posedge s00_axis_aclk)begin
         if(!s00_axis_aresetn)begin
             element_wise_to_sram_exp_addr <= 0;
-        end else if(element_wise_exp_en && element_wise_to_sram_exp_addr < (out_col * out_row -1))begin
+        end else if(element_wise_exp_en && element_wise_to_sram_exp_addr <= (out_size -1))begin
             element_wise_to_sram_exp_addr <= element_wise_to_sram_exp_addr + 1'b1;
             $display("element_wise_to_sram_exp_addr = %d", element_wise_to_sram_exp_addr);
         end
@@ -233,6 +240,11 @@ module npu #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .stride_h(stride_h),
+        .stride_w(stride_w),
+        .in_channel(in_channel),
+        .out_channel(out_channel),
+        .padding(padding),
         // img and kernel data
         .data_in(gemm0_data_out),
         .weight_in(gemm1_data_out),
@@ -242,8 +254,10 @@ module npu #
         // output metadata
         .conv_row(conv_row),
         .conv_col(conv_col),
+        .input_data_idx(input_data_idx),
         .for_conv_row(for_conv_row),
         .for_conv_col(for_conv_col),
+        .input_data_cur_idx(input_data_cur_idx),
         .weight_idx_o(weight_idx),
         // quantized multiplier and shift given by testbench temporarily
         .quantized_multiplier(quantized_multiplier),
@@ -293,6 +307,12 @@ module npu #
         .img_col(img_col),
         .ker_row(ker_row),
         .ker_col(ker_col),
+        .batch(batch),
+        .stride_h(stride_h),
+        .stride_w(stride_w),
+        .in_channel(in_channel),
+        .output_channel(out_channel),
+        .padding(padding),
         .num_channels(num_channels)
     );
 
@@ -322,7 +342,9 @@ module npu #
         .out_size(out_size)
     );
     wire [MAX_ADDR_WIDTH-1:0] gemm1_addr_i;
-    assign gemm1_addr_i = (conv_row + for_conv_row) * img_col + conv_col + for_conv_col;
+    // assign gemm1_addr_i = (conv_col * img_row + conv_row) * in_channel + input_data_idx;
+    assign gemm1_addr_i = (ker_col == 1'b1 && ker_row == 1'b1)? (conv_col * img_row + conv_row) * in_channel + input_data_idx :
+                        (((conv_col + for_conv_col) * img_row) + conv_row ) * in_channel + (input_data_cur_idx - for_conv_col * patch);
     assign elem_en_sel = requant_valid_o || element_wise_exp_en;
     assign elem_addr_sel = (requant_valid_o)? idx1_out:
                             (element_wise_exp_en)? element_wise_to_sram_exp_addr : 1'b0;

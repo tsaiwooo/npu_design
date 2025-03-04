@@ -32,6 +32,8 @@ localparam MAX_DATA_WIDTH = 32;
 // control sram parameters
 localparam SRAM_WIDTH_O = 64;
 
-// data bandwidth
-localparam INT8_WIDTH = 8;
+// data size
+localparam INT8_SIZE = 8;
+localparam INT32_SIZE = 32;
+localparam INT64_SIZE = 64;
 `endif  // PARAMS_VH

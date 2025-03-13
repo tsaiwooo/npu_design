@@ -157,9 +157,9 @@ module MultiplyByQuantizedMultiplier
         if(!rst) right_shift_overflow_s3 <= 0;
         else if(valid_stage2)begin
             if(right_shift_s2 > 0)begin
-                if($signed(ab_64_s2) < $signed(NEG_128_SHIFT))begin
+                if($signed(ab_64_s2[63-:32]) < $signed(NEG_128_SHIFT))begin
                     right_shift_overflow_s3 <= 2'd1;
-                end else if($signed(ab_64_s2) > $signed(POS_127_SHIFT))begin
+                end else if($signed(ab_64_s2[63-:32]) > $signed(POS_127_SHIFT))begin
                     right_shift_overflow_s3 <= 2'd2;
                 end else begin
                     right_shift_overflow_s3 <= 2'd0;

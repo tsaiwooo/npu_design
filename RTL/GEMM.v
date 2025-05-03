@@ -13,12 +13,14 @@ module GEMM #
 (
     input  wire                   clk,
     input  wire                   rst,
+    input  wire                   init,
     //-----------------------------------------------------
     // convolution signals
     //-----------------------------------------------------
     // convolution signals
     // convolution en
     input  wire                   convolution_en,
+    // input  wire                   fc_en,
     // convolution input metadata
     input  wire [ADDR_WIDTH-1:0]  img_row,
     input  wire [ADDR_WIDTH-1:0]  img_col,
@@ -34,7 +36,7 @@ module GEMM #
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
     // convolution output signal control
     output wire                   mac_valid_out,
-    output wire signed [DATA_WIDTH-1:0] mac_out,
+    output wire signed [MAX_GROUPS*DATA_WIDTH-1:0] GEMM_out,
     // convolution output image metadata
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
@@ -44,13 +46,18 @@ module GEMM #
     output wire [8:0]             input_data_cur_idx,
     // convolution output weight idx metadata
     output [MAX_ADDR_WIDTH-1:0]  weight_idx_o,
-    output wire [17:0]  idx1_out,
+    output wire [17:0]  GEMM_results_counts,
     //-----------------------------------------------------
     // requant signals
     //-----------------------------------------------------
     input wire [31:0] quantized_multiplier,
     input signed [31:0] shift,
-    output wire requant_valid_o
+    input signed [31:0] output_offset,
+    // output wire [MAX_VECTOR_SIZE * DATA_WIDTH - 1:0] conv_data_o,
+    // output wire [MAX_VECTOR_SIZE * DATA_WIDTH - 1:0] fc_data_o,
+    // output wire conv_valid_o,
+    // output wire fc_valid_o,
+    output wire GEMM_valid_o
     // after requantout_size
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
 );
@@ -70,7 +77,7 @@ module GEMM #
     reg requant_input_valid;
     reg [QUANT_WIDTH-1 :0] conv_to_requant_32b_i;
     wire requant_output_valid_o;
-    assign requant_valid_o = requant_output_valid_o;
+    assign GEMM_valid_o = requant_output_valid_o;
     // groups_counter
     reg [$clog2(MAX_GROUPS+1) -1:0] groups_counter;
     // mac out to requant
@@ -89,6 +96,8 @@ module GEMM #
     // FIFO FSM control
     always @(posedge clk) begin
         if (!rst) begin
+            FIFO_state <= FIFO_idle;
+        end else if(init) begin
             FIFO_state <= FIFO_idle;
         end else begin
             FIFO_state <= next_FIFO_state;
@@ -135,9 +144,11 @@ module GEMM #
     always @(posedge clk) begin
         if (!rst) begin
             fifo_rd <= 1'b0;
+        end else if(init) begin
+            fifo_rd <= 1'b0;
         end else if(FIFO_state == FIFO_read)begin
             fifo_rd <= 1'b1;
-            $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
+            // $display("****** groups_counter = %d, cur_num_groups = %d, fifo_empty = %d, fifo_rd = %d", groups_counter, cur_num_groups, fifo_empty, fifo_rd);
         end else begin
             fifo_rd <= 1'b0;
         end 
@@ -146,6 +157,8 @@ module GEMM #
     // read data => store in cur_num_groups & cur_macs_out
     always @(*) begin
         if(!rst) begin
+            { cur_num_groups, cur_macs_out } <= 0;
+        end else if(init) begin
             { cur_num_groups, cur_macs_out } <= 0;
         end else if(fifo_rd) begin
             // 同周期 read => data_out 已經是本次讀出的資料 (zero-cycle read)
@@ -157,6 +170,8 @@ module GEMM #
     always @(*)begin
         if(!rst)begin
             conv_to_requant_32b_i <= 0;
+        end else if(init) begin
+            conv_to_requant_32b_i <= 0; 
         end else if(requant_input_valid)begin
             conv_to_requant_32b_i <= cur_macs_out[QUANT_WIDTH * groups_counter  +: QUANT_WIDTH];
         end
@@ -167,6 +182,8 @@ module GEMM #
         if(!rst) begin
             groups_counter <= 0;
         // end else if(requant_input_valid) begin
+        end else if(init) begin
+            groups_counter <= 0; 
         end else if(requant_input_valid) begin
             groups_counter <= groups_counter + 1;
         end else begin
@@ -180,6 +197,8 @@ module GEMM #
     always @(posedge clk) begin
         if(!rst) begin
             requant_input_valid <= 0;
+        end else if(init) begin
+            requant_input_valid <= 0; 
         end else if(FIFO_state == FIFO_requant && groups_counter < cur_num_groups-1) begin
             requant_input_valid <= 1;
         end else begin
@@ -214,6 +233,7 @@ module GEMM #
     (
         .clk(clk),
         .rst(rst),
+        .init(init),
         .en(convolution_en),
         // input metadata
         .img_row(img_row),
@@ -252,8 +272,7 @@ module GEMM #
 
     mac #
     (
-        .MAX_MACS(MAX_MACS),
-        .DATA_WIDTH(DATA_WIDTH)
+        .MAX_MACS(MAX_MACS)
     )
     mac_gen (
         .clk(clk),
@@ -269,8 +288,8 @@ module GEMM #
     );
 
     wire signed [31:0] requant_data_o;
-    assign mac_out = (requant_data_o >= $signed(POS_127))? $signed(POS_127):
-                     (requant_data_o <= $signed(NEG_128))? $signed(NEG_128): requant_data_o[7:0];
+    assign GEMM_out = ((requant_data_o + output_offset) >= $signed(POS_127))? $signed(POS_127):
+                     ((requant_data_o + output_offset )<= $signed(NEG_128))? $signed(NEG_128): requant_data_o[7:0];
     MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_inst(
         .clk(clk),
         .rst(rst),
@@ -287,13 +306,15 @@ module GEMM #
     always @(posedge clk)begin
         if(!rst)begin
             requant_idx <= 0;
+        end else if(init) begin
+            requant_idx <= 0; 
         end else if(requant_output_valid_o)begin
             requant_idx <= requant_idx + 1'b1;
-            $display("requant_idx = %d, requant_value = %d", requant_idx,mac_out);
+            // $display("requant_idx = %d, requant_value = %d", requant_idx,GEMM_out);
         end
     end
 
-    assign idx1_out = requant_idx;
+    assign GEMM_results_counts = requant_idx;
 
     
 endmodule

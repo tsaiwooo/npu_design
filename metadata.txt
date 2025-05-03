@@ -1,0 +1,316 @@
+##################################################
+# layer by layer version
+# Control the flow of npu
+# metadata info
+# 1234567890 -> no more metadata info
+##################################################
+
+#############################################################################
+########                      op0                                 ###########
+##################################################
+#  4'b0000: No operation -> idle
+#  4'b0001: Conv
+#  4'b0010: Fc
+#  4'b0011: Exp
+#  4'b0100: Reciprocal
+#  4'b0101: ADD
+#  4'b0110: SUB
+#  4'b0111: MUL
+# op: 1 operation with 4 bits, total 16bits
+0001
+##################################################
+
+##################################################
+# weight num, how many weights are used in the operation, max = 2
+2
+##################################################
+
+##################################################
+# there are 8 srams in the design
+# store_sram_idx, op0_weight_idx0, op0_weight_idx1
+2 0 1
+##################################################
+
+##################################################
+# op0_boradcast 0 -> no, 1 -> weight, 2 -> data
+0
+# op0_data_counts
+65536
+# op0_input_data_total_counts, op0_weight_total_counts
+50700 432
+##################################################
+
+##################################################
+# convolution signals
+# stride_h, stride_w, padding
+2 2 0
+# image size [N,H,W,C] -> batch size, height, width, in_channel
+1 130 130 3
+# kernel size [O,H,W,C] -> out_channel, ker_height, ker_width, in_channel and in_channel will be ignored
+16 3 3
+# conv_requant_multiplier, conv_requant_shift, conv_output_offset
+1422604838 -2 0
+##################################################
+
+##################################################
+# exp signals
+# exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift, exp_req_input_offset
+480 0 1422604838 -2 1347588939 -4 26
+##################################################
+
+##################################################
+# reciprocal signals
+# reciprocal_deq_input_range_radius, reciprocal_deq_input_zero_point, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift, reciprocal_req_input_offset
+##################################################
+480 0 1347588939 -4 1077521395 -7 0
+##################################################
+# ADD signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 0 0 0 0 0 0 -128 127
+##################################################
+
+##################################################
+# SUB signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 1422604838 0 -2 1422604838 -2 0 -128 127
+##################################################
+
+##################################################
+# MUL signals
+# input1_offset, input2_offset, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 0 0 0 -128 127
+##################################################
+
+
+
+#############################################################################
+########                      op1                                 ###########
+##################################################
+#  4'b0000: No operation -> idle
+#  4'b0001: Conv
+#  4'b0010: Fc
+#  4'b0011: Exp
+#  4'b0100: Reciprocal
+#  4'b0101: ADD
+#  4'b0110: SUB
+#  4'b0111: MUL
+# op: 1 operation with 4 bits, total 16bits
+0110
+##################################################
+
+##################################################
+# weight num, how many weights are used in the operation, max = 2
+1
+##################################################
+
+##################################################
+# there are 8 srams in the design
+# store_sram_idx, op0_weight_idx0(B), op0_weight_idx1(A)
+1 2 0
+##################################################
+
+##################################################
+# op0_boradcast 0 -> no, 1 -> data(sram_idx0), 2 -> weight(sram_idx1)
+1
+# op0_data_counts
+65536
+# op0_input_data_total_counts, op0_weight_total_counts
+1 0
+##################################################
+
+##################################################
+# convolution signals
+# stride_h, stride_w, padding
+2 2 0
+# image size [N,H,W,C] -> batch size, height, width, in_channel
+1 130 130 3
+# kernel size [O,H,W,C] -> out_channel, ker_height, ker_width, in_channel and in_channel will be ignored
+16 3 3
+# conv_requant_multiplier, conv_requant_shift, conv_output_offset
+1422604838 -2 0
+##################################################
+
+##################################################
+# exp signals
+# exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift, exp_req_input_offset
+480 0 1422604838 -2 1347588939 -4 26
+##################################################
+
+##################################################
+# reciprocal signals
+# reciprocal_deq_input_range_radius, reciprocal_deq_input_zero_point, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift, reciprocal_req_input_offset
+##################################################
+480 0 1347588939 -4 1077521395 -7 0
+##################################################
+# ADD signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 0 0 0 0 0 0 -128 127
+##################################################
+
+##################################################
+# SUB signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 1422604838 0 -2 1422604838 -2 0 -128 127
+##################################################
+
+##################################################
+# MUL signals
+# input1_offset, input2_offset, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 0 0 0 -128 127
+##################################################
+
+#############################################################################
+########                      op2                                 ###########
+##################################################
+#  4'b0000: No operation -> idle
+#  4'b0001: Conv
+#  4'b0010: Fc
+#  4'b0011: Exp
+#  4'b0100: Reciprocal
+#  4'b0101: ADD
+#  4'b0110: SUB
+#  4'b0111: MUL
+# op: 1 operation with 4 bits, total 16bits
+0011
+##################################################
+
+##################################################
+# weight num, how many weights are used in the operation, max = 2
+0
+##################################################
+
+##################################################
+# there are 8 srams in the design
+# store_sram_idx, op0_weight_idx0(B), op0_weight_idx1(A)
+# 1 2 0
+0 2 1
+##################################################
+
+##################################################
+# op0_boradcast 0 -> no, 1 -> data(sram_idx0), 2 -> weight(sram_idx1)
+0
+# op0_data_counts
+65536
+# op0_input_data_total_counts, op0_weight_total_counts
+0 0
+##################################################
+
+##################################################
+# convolution signals
+# stride_h, stride_w, padding
+2 2 0
+# image size [N,H,W,C] -> batch size, height, width, in_channel
+1 130 130 3
+# kernel size [O,H,W,C] -> out_channel, ker_height, ker_width, in_channel and in_channel will be ignored
+16 3 3
+# conv_requant_multiplier, conv_requant_shift, conv_output_offset
+1422604838 -2 0
+##################################################
+
+##################################################
+# exp signals
+# exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift, exp_req_input_offset
+480 0 1422604838 -2 1347588939 -4 26
+##################################################
+
+##################################################
+# reciprocal signals
+# reciprocal_deq_input_range_radius, reciprocal_deq_input_zero_point, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift, reciprocal_req_input_offset
+##################################################
+480 0 1347588939 -4 1077521395 -7 0
+##################################################
+# ADD signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 0 0 0 0 0 0 -128 127
+##################################################
+
+##################################################
+# SUB signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 1422604838 0 -2 1422604838 -2 0 -128 127
+##################################################
+
+##################################################
+# MUL signals
+# input1_offset, input2_offset, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 0 0 0 -128 127
+##################################################
+
+#############################################################################
+########                      op3                                 ###########
+##################################################
+#  4'b0000: No operation -> idle
+#  4'b0001: Conv
+#  4'b0010: Fc
+#  4'b0011: Exp
+#  4'b0100: Reciprocal
+#  4'b0101: ADD
+#  4'b0110: SUB
+#  4'b0111: MUL
+# op: 1 operation with 4 bits, total 16bits
+0100
+##################################################
+
+##################################################
+# weight num, how many weights are used in the operation, max = 2
+0
+##################################################
+
+##################################################
+# there are 8 srams in the design
+# store_sram_idx, op0_weight_idx0(B), op0_weight_idx1(A)
+# 0 2 1
+1 2 0
+##################################################
+
+##################################################
+# op0_boradcast 0 -> no, 1 -> data(sram_idx0), 2 -> weight(sram_idx1)
+0
+# op0_data_counts
+65536
+# op0_input_data_total_counts, op0_weight_total_counts
+0 0
+##################################################
+
+##################################################
+# convolution signals
+# stride_h, stride_w, padding
+2 2 0
+# image size [N,H,W,C] -> batch size, height, width, in_channel
+1 130 130 3
+# kernel size [O,H,W,C] -> out_channel, ker_height, ker_width, in_channel and in_channel will be ignored
+16 3 3
+# conv_requant_multiplier, conv_requant_shift, conv_output_offset
+1422604838 -2 0
+##################################################
+
+##################################################
+# exp signals
+# exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift, exp_req_input_offset
+480 0 1422604838 -2 1347588939 -4 26
+##################################################
+
+##################################################
+# reciprocal signals
+# reciprocal_deq_input_range_radius, reciprocal_deq_input_zero_point, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift, reciprocal_req_input_offset
+##################################################
+480 0 1347588939 -4 1077521395 -7 0
+##################################################
+# ADD signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 0 0 0 0 0 0 -128 127
+##################################################
+
+##################################################
+# SUB signals
+# input1_offset, input2_offset, left_shift = 20, input1_multiplier, input2_multiplier, input1_shift, input2_shift, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 20 0 1422604838 0 -2 1422604838 -2 0 -128 127
+##################################################
+
+##################################################
+# MUL signals
+# input1_offset, input2_offset, output_multiplier, output_shift, output_offset, quantized_activation_min, quantized_activation_max
+0 0 0 0 0 -128 127
+##################################################
+1234567890
+#############################################################################

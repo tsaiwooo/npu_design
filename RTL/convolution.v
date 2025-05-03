@@ -15,6 +15,7 @@ module convolution #
 (
     input  wire                   clk,
     input  wire                   rst,
+    input  wire                   init,
     input  wire                   en,
     // input metadata
     input  wire [ADDR_WIDTH-1:0]  img_row,
@@ -188,6 +189,8 @@ module convolution #
     always @(posedge clk)begin
         if(!rst) begin
             state <= S_IDLE;
+        end else if(init) begin
+            state <= S_IDLE;
         end else begin
             state <= next_state;
         end
@@ -241,9 +244,11 @@ module convolution #
     always @(posedge clk)begin
         if(!rst) begin
             weight_buffer <= 0;
+        end else if(init) begin
+            weight_buffer <= 0; 
         end else if((state == S_1 || state == S_2)) begin
             weight_buffer[weight_idx_delay * INT8_SIZE +: INT64_SIZE] <= weight_in;
-            $display("*[DEBUG]* weight_idx_delay = %d, weight_in = %h", weight_idx_delay, weight_in);
+            // $display("*[DEBUG]* weight_idx_delay = %d, weight_in = %h", weight_idx_delay, weight_in);
         end
     end
 
@@ -251,6 +256,8 @@ module convolution #
     always @(posedge clk)begin
         if(!rst)begin
             for_conv_col_reg <= 0;
+        end else if(init) begin
+            for_conv_col_reg <= 0; 
         end else if(state == S_1 || state == S_4) begin
             if(input_data_cur_idx + nums_input < (for_conv_col_reg + 1) * patch) begin
                 for_conv_col_reg <= for_conv_col_reg;
@@ -265,6 +272,8 @@ module convolution #
     always @(posedge clk)begin
         if(!rst) begin
             for_conv_col_reg_delay <= 0;
+        end else if(init)begin
+            for_conv_col_reg_delay <= 0;
         end else begin
             for_conv_col_reg_delay <= for_conv_col_reg;
         end
@@ -274,6 +283,8 @@ module convolution #
     always @(posedge clk)begin
         if(!rst)begin
             input_data_cur_idx <= 0;
+        end else if(init) begin
+            input_data_cur_idx <= 0; 
         end else if(state == S_1 || state == S_4) begin
             if(input_data_cur_idx + nums_input < (for_conv_col_reg + 1) * patch) begin
                 input_data_cur_idx <= input_data_cur_idx + nums_input;
@@ -288,6 +299,8 @@ module convolution #
     always @(posedge clk)begin
         if(!rst) begin
             input_data_cur_idx_delay <= 0;
+        end else if(init) begin
+            input_data_cur_idx_delay <= 0; 
         end else begin
             input_data_cur_idx_delay <= input_data_cur_idx;
         end
@@ -297,6 +310,8 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             conv_col <= 0;
+        end else if(init) begin
+            conv_col <= 0; 
         end else if (ker_row == 1'b1 && state == S_3 && conv_row + stride_row >= out_row ) begin
             conv_col <= conv_col + stride_col;
         end else if (state == S_3 && conv_row + stride_row  + ker_row>= img_row+1 ) begin
@@ -307,6 +322,8 @@ module convolution #
     // conv_row Logic
     always @(posedge clk) begin
         if (!rst) begin
+            conv_row <= 0;
+        end else if(init) begin 
             conv_row <= 0;
         end else if(ker_row == 1'b1 && state == S_3 && conv_row + stride_row >= out_row) begin
             conv_row <= 0;
@@ -321,6 +338,8 @@ module convolution #
     always @(posedge clk) begin
         if(!rst) begin
             input_idx <= 0;
+        end else if(init) begin
+            input_idx <= 0; 
         end else if (en) begin
             if((state == S_1 || state == S_4)) begin
                 input_idx <= input_idx + nums_input;
@@ -340,6 +359,8 @@ module convolution #
     always @(posedge clk) begin
         if(!rst) begin
             output_channel_idx <= 0;
+        end else if(init) begin
+            output_channel_idx <= 0; 
         end else if ((state == S_2 || state == S_1) && weight_idx_delay + nums_input >= output_channel_idx * total_macs) begin
             output_channel_idx <= output_channel_idx + 1'd1;
         end else if(state == S_5) begin
@@ -354,6 +375,8 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             mac_valid_in <= 1'b0;
+        end else if(init) begin
+            mac_valid_in <= 0; 
         end else if(state == S_5) begin // 等到input好且weight也好
             mac_valid_in <= 1'b1;
         end else if (state == S_2  && (weight_idx_delay + nums_input) >= (output_channel_idx) * total_macs && !output_channel_idx[0]) begin // input好但是weight還再第一次load
@@ -371,8 +394,12 @@ module convolution #
     assign valid_count = ((input_data_cur_idx_delay + nums_input) <= total_macs)? nums_input: total_macs - input_data_cur_idx_delay;
     integer input_mac_for_i,k;
     always @(posedge clk) begin
-        if (!rst || !en) begin
+        if (!rst) begin
             data_mac_o <= 0;
+        end else if(init) begin
+            data_mac_o <= 0; 
+        end else if(!en) begin
+            data_mac_o <= 0; 
         end else if (en_delay) begin
             if(state == S_1 || state == S_4)begin
                 // directly put data to data_mac_o due to data is continuous in sram
@@ -397,6 +424,8 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             weight_idx <= 0;
+        end else if(init) begin
+            weight_idx <= 0; 
         end else if (en) begin
             if(state == S_1 || state == S_2) begin
                 if(ker_row == 1'b1) begin
@@ -422,6 +451,8 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             weight_start_idx <= 0;
+        end else if(init) begin
+            weight_start_idx <= 0; 
         end else if ((S_1 || S_2) && en_delay) begin
             if(ker_row == 1'b1) begin
                 if (weight_start_idx + nums_input < num_groups_reg * total_macs && weight_idx) begin
@@ -442,7 +473,11 @@ module convolution #
 
     // control weight_mac_i
     always @(posedge clk) begin
-        if (!rst || !en) begin
+        if (!rst) begin
+            weight_mac_o <= 0;
+        end else if(init) begin
+            weight_mac_o <= 0;  
+        end else if(!en) begin
             weight_mac_o <= 0;
         end else if (en_delay) begin
             if(state == S_5)begin
@@ -460,13 +495,15 @@ module convolution #
     always @(posedge clk) begin
         if (!rst) begin
             debug_cycle_count <= 0;
+        end else if(init) begin 
+            debug_cycle_count <= 0;
         end else begin
             debug_cycle_count <= debug_cycle_count + 1;
             
             // Debug prints
             if (en) begin
-                $display("*[DEBUG]* Cycle: %d, total_macs=%d, output_channel_idx=%d, output_channel=%d, conv_row=%d, conv_col=%d, num_groups_reg=%d", 
-                        debug_cycle_count,total_macs, output_channel_idx, output_channel, conv_row, conv_col,num_groups_reg);
+                // $display("*[DEBUG]* Cycle: %d, total_macs=%d, output_channel_idx=%d, output_channel=%d, conv_row=%d, conv_col=%d, num_groups_reg=%d", 
+                //         debug_cycle_count,total_macs, output_channel_idx, output_channel, conv_row, conv_col,num_groups_reg);
             end
         end
     end

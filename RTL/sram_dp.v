@@ -35,12 +35,13 @@ module sram_dp
     // ------------------------------------
     always @(posedge clk1_i) begin
         integer i;
-        if (en1_i) begin
+        if (en1_i && (we1_i !== 1'b1 )) begin
             for (i = 0; i < num_channels1_i; i = i + 1) begin
                 data1_o[DATA_WIDTH*(i+1)-1 -: DATA_WIDTH] <= RAM[addr1_i[ADDRW*(i+1)-1 -: ADDRW]];
             end
             ready1_o <= 1;
         end else begin
+            data1_o <= 0;
             ready1_o <= 0;
         end
     end
@@ -50,7 +51,7 @@ module sram_dp
     // ------------------------------------
     always @(posedge clk1_i) begin
         integer i;
-        if (en1_i & we1_i) begin
+        if (en1_i && (we1_i === 1'b1)) begin
             for (i = 0; i < num_channels1_i; i = i + 1) begin
                 RAM[addr1_i[ADDRW*(i+1)-1 -: ADDRW]] <= data1_i[DATA_WIDTH*(i+1)-1 -: DATA_WIDTH];
             end
@@ -62,12 +63,13 @@ module sram_dp
     // ------------------------------------
     always @(posedge clk2_i) begin
         integer i;
-        if (en2_i) begin
+        if (en2_i && (we2_i !== 1'b1)) begin
             for (i = 0; i < num_channels2_i; i = i + 1) begin
                 data2_o[DATA_WIDTH*(i+1)-1 -: DATA_WIDTH] <= RAM[addr2_i[ADDRW*(i+1)-1 -: ADDRW]];
             end
             ready2_o <= 1;
         end else begin
+            data2_o <= 0;
             ready2_o <= 0;
         end
     end

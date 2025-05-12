@@ -24,9 +24,9 @@ module axi_stream_output #
     input  wire                   start_output,
     input  wire [MAX_ADDR_WIDTH-1:0]  out_size,
     // groups
-    input  wire [2:0]           groups 
+    input  wire [3:0]           groups 
 );
-
+    reg [3:0] groups_reg;
     reg [MAX_ADDR_WIDTH-1:0] read_counter;
     reg                  output_done;
     reg                  data_valid_reg;  
@@ -36,6 +36,14 @@ module axi_stream_output #
     wire reset_condition = !m_axis_aresetn;
     wire start_condition = start_output && !output_done;
 
+    // store groups_reg
+    always @(posedge m_axis_aclk) begin
+        if(reset_condition) begin
+            groups_reg <= 0;
+        end else begin
+            groups_reg <= groups;
+        end
+    end
     // Control sram_out_en
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
@@ -77,7 +85,7 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tvalid <= 1'b0;
         end else if (start_condition) begin
-            if (groups*read_counter >= (out_size - 1)) begin
+            if (groups_reg*read_counter >= (out_size - 1)) begin
                 m_axis_tvalid <= 1'b0;
             end else if (data_ready) begin
                 m_axis_tvalid <= 1'b1;
@@ -94,7 +102,8 @@ module axi_stream_output #
         if (reset_condition) begin
             m_axis_tlast <= 1'b0;
         end else if (start_condition && data_ready) begin
-            m_axis_tlast <= (read_counter == (out_size - 2));
+            // m_axis_tlast <= (read_counter == (out_size - 2));
+            m_axis_tlast <= ((read_counter+1)*groups >= out_size);
         end else begin
             m_axis_tlast <= 1'b0;
         end
@@ -116,7 +125,7 @@ module axi_stream_output #
         if (reset_condition) begin
             read_counter <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && data_ready) begin
-            if (groups*read_counter < (out_size - 1)) begin
+            if (groups_reg*read_counter < (out_size - 1)) begin
                 read_counter <= read_counter + 1;
             end else begin
                 read_counter <= {MAX_ADDR_WIDTH{1'b0}};
@@ -130,7 +139,7 @@ module axi_stream_output #
     always @(posedge m_axis_aclk) begin
         if (reset_condition) begin
             output_done <= 1'b0;
-        end else if (start_condition && data_ready && (groups*read_counter >= (out_size - 1))) begin
+        end else if (start_condition && data_ready && (groups_reg*read_counter >= (out_size - 1))) begin
             output_done <= 1'b1;
         end else begin
             output_done <= 1'b0;

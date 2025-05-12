@@ -1,3 +1,7 @@
+`ifndef __FUNCTION_VH__
+`define __FUNCTION_VH__
+`include "params.vh"
+
 function automatic signed [31:0] dequant_saturate(
     input signed [7:0] data_in,
     input signed [31:0] input_zero_point,
@@ -17,3 +21,34 @@ begin
 end    
 
 endfunction
+
+function automatic [INT64_SIZE-1:0] get_specific_64bits(
+    input [2*INT64_SIZE-1:0] data_in,
+    input [MAX_ADDR_WIDTH-1:0] index
+);
+    reg [2:0] byte_offset;
+    begin
+        byte_offset = index[2:0];
+        get_specific_64bits = data_in[INT8_SIZE*byte_offset +: INT64_SIZE];
+    end
+endfunction
+
+function automatic [INT32_SIZE-1:0] mod_func(
+    input [MAX_ADDR_WIDTH-1:0] index,
+    input [INT32_SIZE-1:0] mod_value
+);
+    integer i;
+    reg [INT32_SIZE-1:0] mod_result;
+    begin
+        mod_result = index;
+        for_loop: for(i = 0; i<4; i = i+1) begin
+            if(mod_result < mod_value) begin
+                ;
+            end else begin
+                mod_result = mod_result - mod_value;
+            end
+        end
+        mod_func = mod_result;
+    end
+endfunction
+`endif // __FUNCTION_VH__

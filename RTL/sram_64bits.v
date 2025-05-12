@@ -1,5 +1,7 @@
+// support unaligned access
 `timescale 1ns / 1ps
 `include "params.vh"
+`include "function.vh"
 
 module sram_64bits
 #(parameter DATA_WIDTH = 32, N_ENTRIES = 1024, parameter DATA_WIDTH_O = 64)
@@ -7,18 +9,15 @@ module sram_64bits
     input                           clk_i,
     input                           en_i,
     input                           we_i,
-    input  [$clog2(N_ENTRIES)-1: 0] addr_i,
-    input  [DATA_WIDTH-1: 0]        data_i,
+    input  [MAX_ADDR_WIDTH-1: 0] addr_i,
+    input  [SRAM_WIDTH_O-1: 0]        data_i,
     output reg [SRAM_WIDTH_O-1: 0]    data_o
 );
 
-    reg [DATA_WIDTH-1 : 0] RAM [N_ENTRIES-1: 0];
-    wire [6:0] shift_amount;
-    wire [6:0] nums_input;
-    assign shift_amount = $clog2(DATA_WIDTH);
-    assign nums_input = (SRAM_WIDTH_O >> shift_amount);
+    (* ram_style = "ultra" *) reg [SRAM_WIDTH_O-1 : 0] RAM [N_ENTRIES-1: 0];
+    wire [MAX_ADDR_WIDTH-1: 0] word_addr;
+    assign word_addr = addr_i >> 3;
 
-    integer i;
     always@(posedge clk_i) begin
         if (en_i) begin
             // write operation
@@ -26,7 +25,8 @@ module sram_64bits
                 RAM[addr_i] <= data_i;
             // read operaition
             end else begin
-                data_o <= RAM[addr_i];
+                // data_o <= RAM[addr_i];
+                data_o <= get_specific_64bits({RAM[word_addr+1],RAM[word_addr]},addr_i);
             end
         end
     end

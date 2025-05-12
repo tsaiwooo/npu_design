@@ -7,27 +7,35 @@
 `ifndef PARAMS_VH
 `define PARAMS_VH  
 // FSM states
+// -------------------------------------------------
+// WAIT_META: wait cpu for metadata
+// WAIT_OP  : wait npu calculation
+// OP_DONE  : npu calculation done, layer_calc_done = 1
+// -------------------------------------------------
 localparam [2:0] IDLE         = 0;
-localparam [2:0] LOAD_IMG         = 1;
-localparam [2:0] LOAD_KER         = 2;
-localparam [2:0] COMPUTE_CONV0 = 3;
-localparam [2:0] COMPUTE_CONV1 = 4;
+localparam [2:0] WAIT_META = 1;
+localparam [2:0] WAIT_OP    = 2;
+localparam [2:0] OP_DONE    = 3;
+// localparam [2:0] LOAD_IMG         = 1;
+// localparam [2:0] LOAD_KER         = 2;
+// localparam [2:0] COMPUTE_CONV0 = 3;
+// localparam [2:0] COMPUTE_CONV1 = 4;
 localparam [2:0] WAIT_LAST = 5;
 // localparam ACTIVATION   = 3'd4;
 localparam [2:0] WRITE_OUTPUT = 6;
 
 // for multi_sram paramaters        
-localparam NUM_SRAMS = 2;
-localparam int DATA_WIDTHS[0:NUM_SRAMS-1] = '{8, 8
+localparam NUM_SRAMS = 8;
+localparam int DATA_WIDTHS[0:NUM_SRAMS-1] = '{64, 64, 64, 64, 64, 64, 64, 64
                                              };
 `ifndef synthesis
-localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{262144, 262144
+localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144
                                              };
 `else
-localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{128, 128
+localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{128, 128, 128, 128, 128, 128, 128, 128
                                              };
 `endif
-localparam [7:0] GEMM0_SRAM_IDX = 0, GEMM1_SRAM_IDX=1, GEMM2_SRAM_IDX=2, GEMM3_SRAM_IDX=3, ELEM0_SRAM_IDX=4, ELEM1_SRAM_IDX=5, DEQUANT0_SRAM_IDX=6, DEQUANT1_SRAM_IDX=7, RESULT_OUT=8;
+localparam [2:0] GEMM0_SRAM_IDX = 0, GEMM1_SRAM_IDX=1, GEMM2_SRAM_IDX=2, ELEM0_SRAM_IDX=3, ELEM1_SRAM_IDX=4, DEQUANT0_SRAM_IDX=5, DEQUANT1_SRAM_IDX=6, RESULT_OUT=7;
 localparam MAX_ADDR_WIDTH = 18; 
 localparam MAX_DATA_WIDTH = 32;
 
@@ -46,4 +54,9 @@ localparam SRAM_WIDTH_O = 64;
 localparam INT8_SIZE = 8;
 localparam INT32_SIZE = 32;
 localparam INT64_SIZE = 64;
+
+// exp mul pipeline depth
+localparam MUL_DEPTH = 2; 
+// MultiplyByQuantizedMultiplierSmallerThanOneExp DEPTH
+// localparam DEPTH = 3;
 `endif  // PARAMS_VH

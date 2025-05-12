@@ -11,14 +11,14 @@ module mac#
 (
     input                                    clk,         
     input                                    rst,         
-    input      [$clog2(MAX_GROUPS+1) -1:0]   num_groups,
+    input      [3:0]   num_groups,
     input      [MAX_GROUPS * MAC_BIT_PER_GROUP -1:0]     num_macs_i,  
     input                                    valid_in,   
     input       [MAX_MACS*DATA_WIDTH-1:0]    data,  
     input       [MAX_MACS*DATA_WIDTH-1:0]    weight,
-    output reg signed [MAX_GROUPS*4*DATA_WIDTH-1:0]       mac_out, 
+    output reg signed [MAX_GROUPS*4*INT8_SIZE-1:0]       mac_out, // 32bits is the result bandwidth
     output reg                               valid_out,
-    output reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_o
+    output reg [3:0] num_groups_o
 );
 
 reg signed [2*DATA_WIDTH-1:0] mac_result[0:MAX_MACS-1];
@@ -32,7 +32,7 @@ reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_reg;
 integer group_idx, pe_idx;
 
 // pipeline register for num_groups
-reg [$clog2(MAX_GROUPS+1) -1:0] num_groups_pipeline[0:1];
+reg [3:0] num_groups_pipeline[0:1];
 
 always @(posedge clk)begin
     if(!rst)begin
@@ -61,6 +61,9 @@ always @(*)begin
 end
 
 always @(*)begin
+    for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+        group_macs[group_idx] = 0;
+    end
     if(valid_in) begin
         for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
             group_macs[group_idx] = num_macs_i[group_idx*MAC_BIT_PER_GROUP +: MAC_BIT_PER_GROUP];
@@ -84,6 +87,11 @@ always @(*) begin
             start_idx = start_idx + group_macs[group_idx];  // each MAC occupy DATA_WIDTH bandwidth
             // $display("group_start_addr[%0d] = %0d", group_idx, group_start_addr[group_idx]);
         end
+    end else begin
+        start_idx = 0;  // initialize start_idx
+        for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+            group_start_addr[group_idx] = 0; // record current group start address
+        end
     end
 end
 
@@ -99,33 +107,34 @@ always @(posedge clk) begin
     end
 end
 
-wire gated_clk1, gated_clk2;
-`ifdef SIMULATION
-    // simulation use
-    assign gated_clk1 = clk & valid_in;
-    assign gated_clk2 = clk & valid_pipeline[0];
-`else
-    // standard cell cg_cell
-    cg_cell u_cg_cell1 (
-        .clk_in (clk),
-        .en     (valid_in),
-        .clk_out(gated_clk1)
-    );
+// wire gated_clk1, gated_clk2;
+// `ifdef SIMULATION
+//     // simulation use
+//     assign gated_clk1 = clk & valid_in;
+//     assign gated_clk2 = clk & valid_pipeline[0];
+// `else
+//     // standard cell cg_cell
+//     cg_cell u_cg_cell1 (
+//         .clk_in (clk),
+//         .en     (valid_in),
+//         .clk_out(gated_clk1)
+//     );
 
-    cg_cell u_cg_cell2 (
-        .clk_in (clk),
-        .en     (valid_pipeline[0]),
-        .clk_out(gated_clk2)
-    );
-`endif
+//     cg_cell u_cg_cell2 (
+//         .clk_in (clk),
+//         .en     (valid_pipeline[0]),
+//         .clk_out(gated_clk2)
+//     );
+// `endif
 
 // Generate MAC calculations
-always @(posedge gated_clk1) begin
+always @(posedge clk) begin
     if (!rst) begin
         for (i = 0; i < MAX_MACS; i = i + 1) begin
             mac_result[i] <= 0;
         end
     end else if (valid_in) begin
+        // $display("MAC calculation data: %h, weight: %h", data, weight);
         for (i = 0; i < MAX_MACS; i = i + 1) begin
             mac_result[i] <= $signed(data[i*DATA_WIDTH +: DATA_WIDTH]) * $signed(weight[i*DATA_WIDTH +: DATA_WIDTH]);
         end
@@ -186,7 +195,7 @@ generate
         end
 
         // store final result 
-        always @(posedge gated_clk2) begin
+        always @(posedge clk) begin
             if (valid_pipeline[0]) begin
                 if (group_macs[group_idx_g] <= 1) begin
                     mac_out[group_idx_g*4*DATA_WIDTH +: 4*DATA_WIDTH] <= mac_result[group_start_addr[group_idx_g]]; // For 1 MAC

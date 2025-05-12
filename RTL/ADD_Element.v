@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 `include "params.vh"
 
-module ADD_element_pipeline (
+module ADD_Element (
     input  clk,
     input  rst,
     input  input_valid,
@@ -22,7 +22,13 @@ module ADD_element_pipeline (
     output reg signed [INT8_SIZE-1:0] out,
     output reg valid
 );
-
+    reg input_valid_reg;
+    always @(posedge clk or negedge rst) begin
+        if (!rst)
+            input_valid_reg <= 0;
+        else
+            input_valid_reg <= input_valid;
+    end
     //===================================================
     // Stage 0: 鎖存所有參數 (每個參數一個 always)
     //===================================================
@@ -77,15 +83,57 @@ module ADD_element_pipeline (
       else stage0_output_offset <= output_offset;
 
     reg signed [31:0] stage0_quantized_activation_min;
+    reg signed [31:0] stage_quantized_activation_min[0:5];
+    integer i;
     always @(posedge clk or negedge rst)
       if (!rst) stage0_quantized_activation_min <= 0;
       else stage0_quantized_activation_min <= quantized_activation_min;
+    
+    always @(posedge clk or negedge rst) begin
+      if(!rst) begin
+        for(i = 0; i < 6; i = i + 1) begin
+          stage_quantized_activation_min[i] <= 0;
+        end
+      end else begin
+        stage_quantized_activation_min[0] <= stage0_quantized_activation_min;
+        stage_quantized_activation_min[1] <= stage_quantized_activation_min[0];
+        stage_quantized_activation_min[2] <= stage_quantized_activation_min[1];
+        stage_quantized_activation_min[3] <= stage_quantized_activation_min[2];
+        stage_quantized_activation_min[4] <= stage_quantized_activation_min[3];
+        stage_quantized_activation_min[5] <= stage_quantized_activation_min[4];
+      end
+    end
 
     reg signed [31:0] stage0_quantized_activation_max;
+    reg signed [31:0] stage_quantized_activation_max[0:5];
     always @(posedge clk or negedge rst)
       if (!rst) stage0_quantized_activation_max <= 0;
       else stage0_quantized_activation_max <= quantized_activation_max;
 
+    always @(posedge clk or negedge rst) begin
+      if(!rst) begin
+        for(i = 0; i < 6; i = i + 1) begin
+          stage_quantized_activation_max[i] <= 0;
+        end
+      end else begin
+        stage_quantized_activation_max[0] <= stage0_quantized_activation_max;
+        stage_quantized_activation_max[1] <= stage_quantized_activation_max[0];
+        stage_quantized_activation_max[2] <= stage_quantized_activation_max[1];
+        stage_quantized_activation_max[3] <= stage_quantized_activation_max[2];
+        stage_quantized_activation_max[4] <= stage_quantized_activation_max[3];
+        stage_quantized_activation_max[5] <= stage_quantized_activation_max[4];
+      end
+    end
+    reg [INT8_SIZE-1:0] in1_reg, in2_reg;
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            in1_reg <= 0;
+            in2_reg <= 0;
+        end else begin
+            in1_reg <= in1;
+            in2_reg <= in2;
+        end
+    end
     //===================================================
     // Stage 1_2: 合併 Offset 校正與左移放大
     // 計算: stage1_2 = (in + offset) * (1 << left_shift)
@@ -98,8 +146,8 @@ module ADD_element_pipeline (
             stage1_2_in1 <= 0;
             stage1_2_valid <= 0;
         end else begin
-            stage1_2_in1 <= ($signed(in1) + stage0_input1_offset) * (1 << stage0_left_shift);
-            stage1_2_valid <= input_valid;
+            stage1_2_in1 <= ($signed(in1_reg) + stage0_input1_offset) * (1 << stage0_left_shift);
+            stage1_2_valid <= input_valid_reg;
         end
     end
 
@@ -107,7 +155,7 @@ module ADD_element_pipeline (
         if (!rst)
             stage1_2_in2 <= 0;
         else
-            stage1_2_in2 <= ($signed(in2) + stage0_input2_offset) * (1 << stage0_left_shift);
+            stage1_2_in2 <= ($signed(in2_reg) + stage0_input2_offset) * (1 << stage0_left_shift);
     end
 
     //===================================================
@@ -149,7 +197,9 @@ module ADD_element_pipeline (
     reg stage4_valid;
     always @(posedge clk or negedge rst)
       if (!rst) stage4_valid <= 0;
-      else stage4_valid <= valid_mul1 & valid_mul2;
+      else if(valid_mul1 & valid_mul2) stage4_valid <= 1;
+      else stage4_valid <= 0;
+      // else stage4_valid <= valid_mul1 & valid_mul2;
 
     //===================================================
     // Stage 5: 第二次 Requant 化
@@ -192,10 +242,10 @@ module ADD_element_pipeline (
             stage6_clamped <= 0;
             stage6_clamp_valid <= 0;
         end else begin
-            if (stage6_out < stage0_quantized_activation_min)
-                stage6_clamped <= stage0_quantized_activation_min;
-            else if (stage6_out > stage0_quantized_activation_max)
-                stage6_clamped <= stage0_quantized_activation_max;
+            if (stage6_out < stage_quantized_activation_min[5])
+                stage6_clamped <= stage_quantized_activation_min[5];
+            else if (stage6_out > stage_quantized_activation_max[5])
+                stage6_clamped <= stage_quantized_activation_max[5];
             else
                 stage6_clamped <= stage6_out;
             stage6_clamp_valid <= stage6_valid;

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 `include "params.vh"
 
-module MUL_element_pipeline (
+module MUL_Element (
     input clk,
     input rst,
     input input_valid,

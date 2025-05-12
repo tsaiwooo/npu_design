@@ -15,12 +15,14 @@ module GEMM #
 (
     input  wire                   clk,
     input  wire                   rst,
+    input  wire                   init,
     //-----------------------------------------------------
     // convolution signals
     //-----------------------------------------------------
     // convolution signals
     // convolution en
     input  wire                   convolution_en,
+    input  wire                   fc_en,
     // convolution input metadata
     input  wire [ADDR_WIDTH-1:0]  img_row,
     input  wire [ADDR_WIDTH-1:0]  img_col,
@@ -52,11 +54,16 @@ module GEMM #
     //-----------------------------------------------------
     input wire [31:0] quantized_multiplier,
     input signed [31:0] shift,
+    input signed [31:0] output_offset,
     output wire requant_valid_o,
+    output wire conv_valid_o,
+    output wire [MAX_VECTOR_SIZE * DATA_WIDTH - 1:0] conv_data_o,
+    output wire [MAX_VECTOR_SIZE * DATA_WIDTH - 1:0] fc_data_o,
+    output wire fc_valid_o,
     // after requant
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
     // requant num of groups
-    output reg [2:0] stored_num_groups_o
+    output reg [3:0] stored_num_groups_o
 );
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
@@ -64,10 +71,10 @@ module GEMM #
     wire mac_data_ready;
     wire [MAX_MACS*DATA_WIDTH-1:0] data_mac_i;
     wire [MAX_MACS*DATA_WIDTH-1:0] weight_mac_i;
-    wire [$clog2(MAX_GROUPS+1) -1:0] num_groups_i;
+    wire [3:0] num_groups_i;
     wire [MAX_GROUPS * MAC_BIT_PER_GROUP -1:0] num_macs_i;
     wire [MAX_GROUPS * QUANT_WIDTH-1:0] mac_to_conv_i;
-    wire [$clog2(MAX_GROUPS+1) -1:0] num_groups_o;
+    wire [3:0] num_groups_o;
     
     // requant pipeline signals
     reg [QUANT_WIDTH * MAX_GROUPS - 1 : 0] conv_to_requant_i;
@@ -77,6 +84,10 @@ module GEMM #
     wire signed [DATA_WIDTH-1 :0] requant_8bits_out;
     wire requant_output_valid_o;
     assign requant_valid_o = requant_output_valid_o;
+    assign conv_valid_o = requant_output_valid_o && ker_col != 1 && ker_row != 1;
+    assign fc_valid_o = requant_output_valid_o && ker_col == 1 && ker_row == 1;
+    assign conv_data_o = mac_out;
+    assign fc_data_o = mac_out;
     // assign mac_out = requant_8bits_out;
     assign requant_8bits_out = (requant_32bits_out > $signed(POS_127))? POS_127:
                                 (requant_32bits_out < $signed(NEG_128))? NEG_128: requant_32bits_out;
@@ -101,6 +112,8 @@ module GEMM #
     always @(posedge clk)begin
         if(!rst)begin
             is_stored <= 0;
+        end else if(init) begin
+            is_stored <= 0; 
         end else if(mac_valid_out && !is_stored)begin
             is_stored <= 1;
         end
@@ -109,6 +122,8 @@ module GEMM #
     always @(posedge clk)begin
         if(!rst)begin
             stored_num_groups_o <= 0;
+        end else if(init) begin
+            stored_num_groups_o <= 0; 
         end else if(is_stored)begin
             stored_num_groups_o <= num_groups_o;
         end
@@ -123,7 +138,8 @@ module GEMM #
     (
         .clk(clk),
         .rst(rst),
-        .en(convolution_en),
+        .init(init),
+        .en(convolution_en || fc_en),
         // input metadata
         .img_row(img_row),
         .img_col(img_col),
@@ -204,8 +220,8 @@ generate
         // requant input valid signal control
         assign requant_input_valid_array[requant_muodule_idx] = (requant_muodule_idx < num_groups_o && mac_valid_out)? 1 : 0;
         // requant output data saturate
-        assign requant_8bits_out_array[requant_muodule_idx] = (requant_32bits_out_array[requant_muodule_idx] >= $signed(POS_127))? $signed(POS_127):
-                                (requant_32bits_out_array[requant_muodule_idx] <= $signed(NEG_128))? $signed(NEG_128): requant_32bits_out_array[requant_muodule_idx][7:0];
+        assign requant_8bits_out_array[requant_muodule_idx] = ((requant_32bits_out_array[requant_muodule_idx]+output_offset) >= $signed(POS_127))? $signed(POS_127):
+                                ((requant_32bits_out_array[requant_muodule_idx]+output_offset) <= $signed(NEG_128))? $signed(NEG_128): requant_32bits_out_array[requant_muodule_idx][7:0] + output_offset;
     end
 endgenerate
     assign requant_output_valid_o = requant_output_valid_o_array[0];
@@ -216,6 +232,8 @@ endgenerate
     always @(posedge clk)begin
         if(!rst)begin
             requant_idx <= 0;
+        end else if(init) begin
+            requant_idx <= 0; 
         end else if(requant_output_valid_o)begin
             requant_idx <= requant_idx + 1;
         end
@@ -230,6 +248,9 @@ endgenerate
         end
         if(mac_data_ready) begin
             $display("data_mac_i: %h, weight_mac_i: %h", data_in, weight_in);
+        end
+        if(conv_valid_o) begin
+            $display("[CONV_VALID_O] conv_data_o: %h", conv_data_o);
         end
     end
     

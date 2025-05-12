@@ -62,7 +62,7 @@ module SUB #
 
     generate
         for(i = 0; i < MAX_VECTOR_SIZE; i = i + 1) begin : sub_elements
-            SUB_element_pipeline sub_inst (
+            SUB_Element sub_inst (
                 .clk(clk),
                 .rst(rst),
                 .in1(in1_array[i]),

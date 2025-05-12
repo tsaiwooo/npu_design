@@ -52,7 +52,7 @@ module MUL #
 
     generate
         for(i = 0; i < MAX_VECTOR_SIZE; i = i + 1) begin : mul_elements
-            MUL_element_pipeline mul_inst(
+            MUL_Element mul_inst(
                 .clk(clk),
                 .rst(rst),
                 .input_valid(valid_in),

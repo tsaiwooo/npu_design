@@ -45,9 +45,11 @@ module MultiplyByQuantizedMultiplier
     reg valid_stage1, valid_stage2, valid_stage3, valid_stage4;
 
     // Pipeline registers for input and intermediate values
-    reg signed [31:0] x_reg_s1, quantized_multiplier_reg_s1;
+    // reg signed [31:0] x_reg_s1, quantized_multiplier_reg_s1;
+    reg signed [63:0] x_reg_s1, quantized_multiplier_reg_s1;
     reg signed [31:0] left_shift_s1, right_shift_s1, right_shift_s2, right_shift_s3, right_shift_s4;
-    reg signed [63:0] ab_64_s1, ab_64_s2, ab_64_s3;
+    reg signed [63:0] ab_64_s2, ab_64_s3;
+    reg signed [31:0] ab_64_s1;
     reg overflow_s1, overflow_s2, overflow_s3;
     reg signed [30:0] nudge_s3;
     reg signed [31:0] ab_x2_high32_s3, ab_x2_high32_s4;
@@ -74,7 +76,8 @@ module MultiplyByQuantizedMultiplier
 
     always @(posedge clk) begin
         if (!rst) quantized_multiplier_reg_s1 <= 0;
-        else if (input_valid) quantized_multiplier_reg_s1 <= quantized_multiplier;
+        else if (input_valid) quantized_multiplier_reg_s1 <= quantized_multiplier * x;
+        // else if (input_valid) quantized_multiplier_reg_s1 <= quantized_multiplier;
     end
 
     always @(posedge clk) begin
@@ -89,7 +92,8 @@ module MultiplyByQuantizedMultiplier
 
     always @(posedge clk) begin
         if (!rst) ab_64_s1 <= 0;
-        else if (input_valid) ab_64_s1 <= x * (1 << left_shift_wire);
+        // else if (input_valid) ab_64_s1 <= x * (1 << left_shift_wire);
+        else if (input_valid) ab_64_s1 <= 1 << left_shift_wire;
     end
 
     always @(posedge clk) begin

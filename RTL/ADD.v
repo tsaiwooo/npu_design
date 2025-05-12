@@ -62,7 +62,7 @@ module ADD #
 
     generate
         for(i = 0; i < MAX_VECTOR_SIZE; i = i + 1) begin : add_elements
-            ADD_element_pipeline add_inst (
+            ADD_Element add_inst (
                 .clk(clk),
                 .rst(rst),
                 .in1(in1_array[i]),

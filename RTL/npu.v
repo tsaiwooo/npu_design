@@ -146,9 +146,10 @@ module npu #
     input wire [MAX_ADDR_WIDTH-1:0] op3_data_counts,
     // -------------------------------------
     // output for cycles
-    output reg [31:0] cycle_count,
-    output wire [31:0] sram_access_counts,
-    output reg [31:0] dram_access_counts
+    output reg [63:0] cycle_count,
+    output wire [63:0] sram_access_counts,
+    output reg [63:0] dram_access_counts,
+    output reg [63:0] elementwise_idle_counts
 );
     // AXI4-Lite slave interface signals
     // input  wire         axi_aclk,
@@ -176,7 +177,7 @@ module npu #
     // output reg          S_AXI_RVALID,
     // input  wire         S_AXI_RREADY,
     // memory access counts
-    wire [31:0] total_mem_access_counts, store_access_sram_counts;
+    wire [63:0] total_mem_access_counts, store_access_sram_counts;
     // assign sram_access_counts = total_mem_access_counts - dram_access_counts;
     assign sram_access_counts = store_access_sram_counts;
     // op_decoder signals
@@ -211,7 +212,7 @@ module npu #
     // wire [3:0]             stride_h, stride_w;
     // wire [ADDR_WIDTH-1:0]   in_channel, out_channel;
     // wire                    padding ;
-    wire [5:0]              input_data_idx;
+    wire [MAX_ADDR_WIDTH-1:0]              input_data_idx;
     // wire [ADDR_WIDTH-1:0]   batch;
     wire [2:0]              weight_num_reg;
 
@@ -222,7 +223,6 @@ module npu #
     wire [MAX_ADDR_WIDTH-1:0]  out_size;
 
     // convolution signalsz
-    wire signed [C_AXIS_MDATA_WIDTH - 1 : 0] mac_out;
     wire mac_valid_out;
 
     // output index control
@@ -269,12 +269,7 @@ module npu #
     wire repacker_valid_out;
     reg [MAX_ADDR_WIDTH-1:0] repaker_output_index;
 
-`ifndef synthesis
-    wire [15:0] sram_result_addr;
-`else
-    wire [6:0] sram_result_addr;
-`endif
-    
+
     assign m00_axis_tstrb = groups;
 
     // element-wise signals
@@ -368,34 +363,6 @@ module npu #
         end
     end
 
-    // control FSM
-    // always @(*) begin
-    //     next_state = state;
-    //     case (state)
-    //         IDLE: begin
-    //             if (data_ready && data_type == GEMM0_SRAM_IDX)
-    //                 next_state = LOAD_IMG;
-    //         end
-    //         LOAD_IMG: begin
-    //             if (data_ready && data_type == GEMM1_SRAM_IDX)
-    //                 next_state = LOAD_KER;
-    //         end
-    //         LOAD_KER: begin
-    //             // assum that the data is ready
-    //             if (!data_ready)
-    //                 next_state = COMPUTE_CONV0;
-    //         end
-    //         COMPUTE_CONV0: begin
-    //             next_state = (start_output)? WRITE_OUTPUT : COMPUTE_CONV0;
-    //         end
-    //         WRITE_OUTPUT: begin
-    //             if (sram_out_addr >= out_size)begin
-    //                 next_state = IDLE;
-    //             end 
-    //         end
-    //         default: next_state = IDLE;
-    //     endcase
-    // end
     always @(*)begin
         next_state = state;
         case (state)
@@ -446,19 +413,6 @@ module npu #
             layer_calc_done <= 1'b0;
         end
     end
-    
-    // control GEMM_en
-    // always @(posedge s00_axis_aclk)begin
-    //     if(!s00_axis_aresetn)begin
-    //         GEMM_en <= 1'b0;
-    //     end else if(conv_col >= (img_col - ker_col + 1) && conv_row >= (img_row - ker_row + 1))begin
-    //         GEMM_en <= 1'b0;
-    //     end else if(state == COMPUTE_CONV0)begin
-    //         GEMM_en <= 1'b1;
-    //     end else if(groups*idx1_out >= out_size -1)begin
-    //         GEMM_en <= 1'b0;
-    //     end
-    // end
 
 
     op_decoder op_decoder_inst
@@ -565,7 +519,6 @@ module npu #
         .weight_in(gemm1_data_out),
         // output signal control
         .mac_valid_out(mac_valid_out),
-        .mac_out(mac_out),
         // output metadata
         .conv_row(conv_row),
         .conv_col(conv_col),
@@ -600,6 +553,7 @@ module npu #
         .s_axis_tready(s00_axis_tready),
         .s_axis_tlast(s00_axis_tlast),
         .s_axis_tuser(s00_axis_tuser),
+        .init(state == OP_DONE),
         .write_enable(write_enable),
         .write_address(write_address),
         .write_data(write_data),
@@ -658,6 +612,7 @@ module npu #
     (
         .clk(s00_axis_aclk),
         .rst(s00_axis_aresetn),
+        .mem_cal_en(state == WAIT_OP),
         // GEMM1 port, usually for data, op0_weight_idx1
         .gemm1_addr(gemm1_addr_i),
         .gemm1_data_in(),
@@ -675,8 +630,6 @@ module npu #
         // ELEM port
         .elem_addr(idx1_out),
         .elem_data_in(),
-        // .elem_en(mac_valid_out),
-        // .elem_we(mac_valid_out),
         .elem_en(1'b0),
         .elem_we(1'b0),
         .elem_idx(ELEM0_SRAM_IDX),
@@ -747,7 +700,7 @@ module npu #
         .rst(s00_axis_aresetn),
         .init(state == OP_DONE),
         // exp port
-        .data_in(mac_out),
+
         .groups(groups),
         .valid_in(requant_valid_o),
         .exp_deq_input_range_radius(exp_deq_input_range_radius),
@@ -909,9 +862,20 @@ module npu #
     end 
 
     // DEBUG INFO
-    // always @(posedge s00_axis_aclk)begin
-    //     if(exp_valid_o)begin
-    //         $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d, conv_row = %d, conv_col = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o,conv_row,conv_col);
-    //     end
-    // end
+    always @(posedge s00_axis_aclk)begin
+        // if(exp_valid_o)begin
+        //     $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d, conv_row = %d, conv_col = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o,conv_row,conv_col);
+        // end
+        // $display("state = %d",state);
+        if(state == WAIT_OP) $display("op_total_data_counts = %d, expected_total = %d, groups = %d",op_total_data_counts, expected_total_data_counts,groups);
+        // if(state == WAIT_META) $display("wait_meta, metadata_done = %d, weight_num_reg = %d",metadata_done,weight_num_reg);
+    end
+
+    always @(posedge s00_axis_aclk) begin
+        if(!s00_axis_aresetn) begin
+            elementwise_idle_counts <= 0;
+        end else if((!exp_en && !reciprocal_en && !add_en && !sub_en && !mul_en) && state == WAIT_OP) begin
+            elementwise_idle_counts <= elementwise_idle_counts + 1;
+        end
+    end
 endmodule

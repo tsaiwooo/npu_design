@@ -61,7 +61,7 @@ module axi_stream_output #
             sram_out_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && (data_ready || !data_valid_reg)) begin
             sram_out_addr <= prefetch_addr;
-            $display("sram_out_addr: %d, data = %h", sram_out_addr, sram_out_data_out);
+            // $display("sram_out_addr: %d, data = %h", sram_out_addr, sram_out_data_out);
         end else begin
             sram_out_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end

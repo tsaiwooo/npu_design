@@ -6,7 +6,7 @@ module mac#
     parameter MAX_MACS = 64,
     parameter DATA_WIDTH = 8,
     parameter MAX_GROUPS = 8,
-    parameter MAC_BIT_PER_GROUP = 6
+    parameter MAC_BIT_PER_GROUP = 7
 )
 (
     input                                    clk,         
@@ -46,9 +46,9 @@ end
 
 always @(posedge clk)begin
     if(!rst)begin
-        num_groups_o = 0;
+        num_groups_o <= 0;
     end else begin
-        num_groups_o = num_groups_pipeline[0];
+        num_groups_o <= num_groups_pipeline[0];
     end
 end
 
@@ -60,13 +60,25 @@ always @(*)begin
     end
 end
 
-always @(*)begin
-    for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
-        group_macs[group_idx] = 0;
-    end
-    if(valid_in) begin
+// always @(*)begin
+//     for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+//         group_macs[group_idx] = 0;
+//     end
+//     if(valid_in) begin
+//         for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+//             group_macs[group_idx] = num_macs_i[group_idx*MAC_BIT_PER_GROUP +: MAC_BIT_PER_GROUP];
+//         end
+//     end
+// end
+
+always @(posedge clk)begin
+    if(!rst) begin
         for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
-            group_macs[group_idx] = num_macs_i[group_idx*MAC_BIT_PER_GROUP +: MAC_BIT_PER_GROUP];
+            group_macs[group_idx] <= 0;
+        end
+    end if(valid_in) begin
+        for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+            group_macs[group_idx] <= num_macs_i[group_idx*MAC_BIT_PER_GROUP +: MAC_BIT_PER_GROUP];
         end
     end
 end

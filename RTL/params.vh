@@ -26,17 +26,20 @@ localparam [2:0] WRITE_OUTPUT = 6;
 
 // for multi_sram paramaters        
 localparam NUM_SRAMS = 8;
-localparam int DATA_WIDTHS[0:NUM_SRAMS-1] = '{64, 64, 64, 64, 64, 64, 64, 64
+localparam [31:0] DATA_WIDTHS[0:NUM_SRAMS-1] = '{64, 64, 64, 64, 64, 64, 64, 64
                                              };
 `ifndef synthesis
-localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144
+// localparam [31:0] N_ENTRIES[0:NUM_SRAMS-1] = '{262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144
+//                                              };
+localparam [31:0] N_ENTRIES[0:NUM_SRAMS-1] = '{2097152, 2097152, 2097152, 2097152, 2097152, 2097152, 2097152, 2097152
                                              };
 `else
-localparam int N_ENTRIES[0:NUM_SRAMS-1] = '{128, 128, 128, 128, 128, 128, 128, 128
+localparam [31:0] N_ENTRIES[0:NUM_SRAMS-1] = '{4, 4, 4, 4, 4, 4, 4, 4
                                              };
 `endif
 localparam [2:0] GEMM0_SRAM_IDX = 0, GEMM1_SRAM_IDX=1, GEMM2_SRAM_IDX=2, ELEM0_SRAM_IDX=3, ELEM1_SRAM_IDX=4, DEQUANT0_SRAM_IDX=5, DEQUANT1_SRAM_IDX=6, RESULT_OUT=7;
-localparam MAX_ADDR_WIDTH = 18; 
+// localparam MAX_ADDR_WIDTH = 18; 
+localparam MAX_ADDR_WIDTH = 22; 
 localparam MAX_DATA_WIDTH = 32;
 
 // for 64bits sram parameters

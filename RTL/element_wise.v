@@ -18,7 +18,6 @@ module element_wise #
     // -------------------------------------
     // exp_data_in, 之後看哪個element-wise的function要啟用就增加port
     // -------------------------------------
-    input [INT64_SIZE-1:0]                      data_in,
     input [3:0]                                 groups,
     input                                       valid_in,
     input [INT32_WIDTH-1:0]                            exp_deq_input_range_radius,
@@ -121,7 +120,7 @@ module element_wise #
     input  [INT64_SIZE-1:0]                 mul_weight_data_in,
     // -------------------------------------
 
-    output [17:0] idx1_out
+    output [MAX_ADDR_WIDTH-1:0] idx1_out
 );
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
@@ -133,7 +132,7 @@ module element_wise #
     wire signed [INT32_WIDTH-1:0] dequant_data_out[0:MAX_VECTOR_SIZE-1];
     wire signed [INT32_WIDTH-1:0] exp_requant_data_o[0:MAX_VECTOR_SIZE-1];
     wire exp_requant_output_valid[0:MAX_VECTOR_SIZE-1];
-    reg [17:0] ele_idx;
+    reg [MAX_ADDR_WIDTH-1:0] ele_idx;
 
     // ADD , SUB, MUL signals control
     // input1 delay 1 cycle because of the other data from sram
@@ -408,10 +407,10 @@ endgenerate
         //     $display("[SUB] data_in: %h, weight_data_in: %h", sub_data_in, sub_weight_data_in);
         // end
         if(exp_valid_out)begin
-            $display("[EXP] data_out: %h", exp_data_out);
+            // $display("[EXP] data_out: %h", exp_data_out);
         end
         if(reciprocal_valid_out)begin
-            $display("[RECIPROCAL] data_out: %h", reciprocal_data_out);
+            // $display("[RECIPROCAL] data_out: %h", reciprocal_data_out);
         end
     end
 

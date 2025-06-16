@@ -157,6 +157,6 @@ module broadcast_unit#(
     // assign valid_o = en;
 
     always @(posedge clk) begin
-        if(en) $display("[BROADCAST_UNIT] broadcast start index = %d, broadcast data = %h", broadcast_start_index, data_o);
+        // if(en) $display("[BROADCAST_UNIT] broadcast start index = %d, broadcast data = %h", broadcast_start_index, data_o);
     end
 endmodule

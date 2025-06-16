@@ -6,9 +6,8 @@ module GEMM #
     parameter MAX_MACS = 64,
     parameter ADDR_WIDTH = 13,
     parameter DATA_WIDTH = 8,
-    parameter MAX_ADDR_WIDTH = 18,
     parameter QUANT_WIDTH = 32,
-    parameter MAC_BIT_PER_GROUP = 6,
+    parameter MAC_BIT_PER_GROUP = 7,
     parameter MAX_GROUPS = 8,
     parameter MAX_VECTOR_SIZE = 8
 )
@@ -38,11 +37,10 @@ module GEMM #
     input  wire [SRAM_WIDTH_O-1:0]  weight_in,
     // convolution output signal control
     output wire                   mac_valid_out,
-    output wire signed [8*DATA_WIDTH-1:0] mac_out,
     // convolution output image metadata
     output wire [ADDR_WIDTH-1:0]  conv_row,
     output wire [ADDR_WIDTH-1:0]  conv_col,
-    output wire [5:0]  input_data_idx,
+    output wire [MAX_ADDR_WIDTH-1:0]  input_data_idx,
     output wire [ADDR_WIDTH-1:0]  for_conv_row,
     output wire [ADDR_WIDTH-1:0]  for_conv_col,
     output wire [8:0]             input_data_cur_idx,
@@ -67,6 +65,7 @@ module GEMM #
 );
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
+    wire signed [8*DATA_WIDTH-1:0] mac_out;
     // convolution signals
     wire mac_data_ready;
     wire [MAX_MACS*DATA_WIDTH-1:0] data_mac_i;
@@ -95,19 +94,49 @@ module GEMM #
     reg [$clog2(MAX_GROUPS+1) -1:0] groups_counter;
     // mac out to requant
     wire [MAX_GROUPS * QUANT_WIDTH-1:0] mac_out_to_conv_i;
-    // requant FIFO signals
-    localparam [2:0] FIFO_idle=0, FIFO_read=1, FIFO_requant=2;
-    reg [2:0] FIFO_state, next_FIFO_state;
-    wire fifo_full, fifo_empty;
-    reg  fifo_wr, fifo_rd;
-    wire [QUANT_WIDTH * MAX_GROUPS + $clog2(MAX_GROUPS+1) - 1 : 0] fifo_dout;
-    // current group number and mac_out from FIFO
-    reg [QUANT_WIDTH * MAX_GROUPS - 1 : 0] cur_macs_out;
-    reg [$clog2(MAX_GROUPS+1) - 1 : 0] cur_num_groups;
 
     //store num_groups_o and flag
     reg is_stored = 0;
     // reg [2:0] stored_num_groups_o;
+    // signals for sum that macs > 64
+    wire is_greater_64;
+    wire [15:0] total_macs;
+    wire [10:0] total_blocks;
+    reg [10:0] cur_blocks;
+    wire req_valid_in;
+    assign total_macs = ker_row * ker_col * in_channel;
+    assign total_blocks = (total_macs[5:0] != 0)? (total_macs[15:6] + 1) : total_macs[15:6];
+    assign is_greater_64 = (total_macs > 64 )? 1 : 0;
+    assign req_valid_in = (!is_greater_64)? mac_valid_out :
+                          (is_greater_64 && mac_valid_out && (cur_blocks + 1 == total_blocks))? 1 : 0;
+    reg signed [31:0] accu;
+    wire signed [31:0] req_input;
+    assign req_input = accu + mac_out_to_conv_i[31:0];
+
+    always @(posedge clk) begin
+        if(!rst) begin
+            cur_blocks <= 0;
+        end else if(init) begin
+            cur_blocks <= 0;
+        end else if(cur_blocks + 1 == total_blocks && mac_valid_out) begin
+            cur_blocks <= 0;
+        end else if(is_greater_64 && mac_valid_out) begin
+            cur_blocks <= cur_blocks + 1;
+        end
+    end
+    
+    always @(posedge clk) begin
+        if(!rst) begin
+            accu <= 0;
+        end else if(init) begin
+            accu <= 0;
+        end else if(req_valid_in) begin 
+            accu <= 0;
+        end else if(is_greater_64 && mac_valid_out) begin
+            accu <= accu + $signed(mac_out_to_conv_i[31:0]);
+        end
+    end
+
 
     always @(posedge clk)begin
         if(!rst)begin
@@ -206,13 +235,16 @@ module GEMM #
 genvar requant_muodule_idx; 
 generate
     for(requant_muodule_idx = 0; requant_muodule_idx < MAX_VECTOR_SIZE; requant_muodule_idx = requant_muodule_idx + 1)begin: requant_vector   
+        wire [31:0] x_input;
+        assign x_input = (is_greater_64)? req_input : mac_out_to_conv_i[requant_muodule_idx * QUANT_WIDTH +: QUANT_WIDTH];
         MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_inst(
             .clk(clk),
             .rst(rst),
-            .x(mac_out_to_conv_i[requant_muodule_idx * QUANT_WIDTH +: QUANT_WIDTH]),
+            .x(x_input),
             .quantized_multiplier(quantized_multiplier),
             .shift(shift),
-            .input_valid(requant_input_valid_array[requant_muodule_idx]),
+            .input_valid(req_valid_in),
+            // .input_valid(requant_input_valid_array[requant_muodule_idx] || req_valid_in),
             .output_valid(requant_output_valid_o_array[requant_muodule_idx]),
             .x_mul_by_quantized_multiplier(requant_32bits_out_array[requant_muodule_idx])
         ); 
@@ -236,22 +268,23 @@ endgenerate
             requant_idx <= 0; 
         end else if(requant_output_valid_o)begin
             requant_idx <= requant_idx + 1;
+            // $display("reuqnat = %d",requant_idx+1);
         end
     end
 
     // assign idx1_out = requant_idx;
 
     // DEBUG INFO
-    always @(posedge clk)begin
-        if(mac_valid_out)begin
-            $display("mac_valid_out: %h, groups = %d",mac_out_to_conv_i, num_groups_o);
-        end
-        if(mac_data_ready) begin
-            $display("data_mac_i: %h, weight_mac_i: %h", data_in, weight_in);
-        end
-        if(conv_valid_o) begin
-            $display("[CONV_VALID_O] conv_data_o: %h", conv_data_o);
-        end
-    end
-    
+    // always @(posedge clk)begin
+    //     if(mac_valid_out)begin
+    //         $display("mac_valid_out: %h, groups = %d",mac_out_to_conv_i, num_groups_o);
+    //     end
+    //     if(mac_data_ready) begin
+    //         $display("data_mac_i: %h, weight_mac_i: %h", data_in, weight_in);
+    //     end
+    //     if(conv_valid_o) begin
+    //         $display("[CONV_VALID_O] conv_data_o: %h", conv_data_o);
+    //     end
+    // end
+
 endmodule

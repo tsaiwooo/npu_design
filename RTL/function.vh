@@ -41,7 +41,7 @@ function automatic [INT32_SIZE-1:0] mod_func(
     reg [INT32_SIZE-1:0] mod_result;
     begin
         mod_result = index;
-        for_loop: for(i = 0; i<4; i = i+1) begin
+        for(i = 0; i<4; i = i+1) begin
             if(mod_result < mod_value) begin
                 ;
             end else begin

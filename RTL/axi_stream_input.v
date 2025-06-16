@@ -16,6 +16,7 @@ module axi_stream_input #
     input  wire                   s_axis_tvalid,
     output wire                   s_axis_tready,
     input  wire                   s_axis_tlast,
+    input  wire                   init,
     input  wire [4*ADDR_WIDTH + NUM_CHANNELS_WIDTH-1:0] s_axis_tuser,
     // WAIT_META state signals
     input  wire                   metadata_valid_i,
@@ -95,6 +96,8 @@ module axi_stream_input #
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if (!s_axis_aresetn)
             metadata_read_done <= 1'b0;
+        else if(init)
+            metadata_read_done <= 1'b0;
         else if (metadata_valid_i)
             metadata_read_done <= 1'b1;
         else
@@ -104,9 +107,11 @@ module axi_stream_input #
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if(!s_axis_aresetn) 
             weight_num_reg_o <= 0;
+        else if(init)
+            weight_num_reg_o <= 0;
         else if(s_axis_tlast) begin
             weight_num_reg_o <= weight_num_reg_o - 1;
-            $display("weight_num_reg_o: %d", weight_num_reg_o);
+            // $display("weight_num_reg_o: %d", weight_num_reg_o);
         end else if (metadata_valid_i && !metadata_read_done)
             weight_num_reg_o <= weight_num;
         else
@@ -116,6 +121,8 @@ module axi_stream_input #
     // write_enable
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if (!s_axis_aresetn)
+            write_enable <= 1'b0;
+        else if (init)
             write_enable <= 1'b0;
         else if (s_axis_tvalid && s_axis_tready)
             write_enable <= 1'b1;
@@ -137,6 +144,8 @@ module axi_stream_input #
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if (!s_axis_aresetn)
             write_address <= 0;
+        else if (init)
+            write_address <= 0;
         else if (s_axis_tvalid && s_axis_tready)
             write_address <= address_counter;
         else
@@ -146,6 +155,8 @@ module axi_stream_input #
     // address_counter
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if (!s_axis_aresetn)
+            address_counter <= 0;
+        else if(init)
             address_counter <= 0;
         else if (s_axis_tvalid && s_axis_tready) begin
             if (s_axis_tlast)
@@ -159,6 +170,8 @@ module axi_stream_input #
     // data_ready
     always @(posedge s_axis_aclk or negedge s_axis_aresetn) begin
         if (!s_axis_aresetn)
+            data_ready <= 1'b0;
+        else if (init)
             data_ready <= 1'b0;
         else if (s_axis_tvalid && s_axis_tready)
             data_ready <= 1'b1;

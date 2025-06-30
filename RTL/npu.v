@@ -145,7 +145,7 @@ module npu #
     input wire [MAX_ADDR_WIDTH-1:0] op2_data_counts,
     input wire [MAX_ADDR_WIDTH-1:0] op3_data_counts,
     // -------------------------------------
-    // output for cycles
+    // // output for cycles
     output reg [63:0] cycle_count,
     output wire [63:0] sram_access_counts,
     output reg [63:0] dram_access_counts,
@@ -204,16 +204,10 @@ module npu #
     wire signed [C_AXIS_TDATA_WIDTH-1:0] write_data;
     wire [2:0]              data_type;
     wire                    data_ready;
-    // wire [ADDR_WIDTH-1:0]   img_row;
-    // wire [ADDR_WIDTH-1:0]   img_col;
-    // wire [ADDR_WIDTH-1:0]   ker_row;
-    // wire [ADDR_WIDTH-1:0]   ker_col;
+
     wire [NUM_CHANNELS_WIDTH-1:0] num_channels;
-    // wire [3:0]             stride_h, stride_w;
-    // wire [ADDR_WIDTH-1:0]   in_channel, out_channel;
-    // wire                    padding ;
+
     wire [MAX_ADDR_WIDTH-1:0]              input_data_idx;
-    // wire [ADDR_WIDTH-1:0]   batch;
     wire [2:0]              weight_num_reg;
 
 
@@ -568,16 +562,6 @@ module npu #
         .op3_weight_sram_idx0(op3_weight_sram_idx0),
         .weight_num(weight_num),
         .weight_num_reg_o(weight_num_reg),
-        // .img_row(img_row),
-        // .img_col(img_col),
-        // .ker_row(ker_row),
-        // .ker_col(ker_col),
-        // .batch(batch),
-        // .stride_h(stride_h),
-        // .stride_w(stride_w),
-        // .in_channel(in_channel),
-        // .output_channel(out_channel),
-        // .padding(padding),
         .num_channels(num_channels)
     );
 
@@ -820,28 +804,8 @@ module npu #
         end else if(repacker_valid_out)begin
             repaker_output_index <= repaker_output_index + 1;
         end
-        // if(store_to_sram_en)begin
-        //     $display("store_to_sram_en: %d, store_to_sram_data: %h, counts = %d", store_to_sram_en, store_to_sram_data, op_total_data_counts);
-        // end
-        // $display("state = %d", state);
     end
-    
-    // sram_result addr_i 協定, 可能是用來儲存or讀取
-    // assign sram_result_addr = (sram_out_en)? sram_out_addr : 
-    //                           (exp_valid_o)? idx1_out : 0;
-    // sram_64bits #
-    // (
-    //     .DATA_WIDTH(sram_64bits_width),
-    //     .N_ENTRIES(sram_64bits_depth)
-    // ) sram_result
-    // (
-    //     .clk_i(s00_axis_aclk),
-    //     .en_i(sram_out_en || exp_valid_o),
-    //     .we_i(exp_valid_o),
-    //     .addr_i(sram_result_addr),
-    //     .data_i(exp_data_o),
-    //     .data_o(sram_data_out)
-    // );
+
    
 
     // cycle count control
@@ -862,14 +826,14 @@ module npu #
     end 
 
     // DEBUG INFO
-    always @(posedge s00_axis_aclk)begin
-        // if(exp_valid_o)begin
-        //     $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d, conv_row = %d, conv_col = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o,conv_row,conv_col);
-        // end
-        // $display("state = %d",state);
-        if(state == WAIT_OP) $display("op_total_data_counts = %d, expected_total = %d, groups = %d",op_total_data_counts, expected_total_data_counts,groups);
-        // if(state == WAIT_META) $display("wait_meta, metadata_done = %d, weight_num_reg = %d",metadata_done,weight_num_reg);
-    end
+    // always @(posedge s00_axis_aclk)begin
+    //     // if(exp_valid_o)begin
+    //     //     $display("exp_data_o: %d, idx1_out: %d, out_size = %d, out_row = %d, out_col = %d, out_channel = %d, img_row = %d, img_col = %d, stride_h = %d, stride_w = %d, stored_num_groups_o = %d, conv_row = %d, conv_col = %d", exp_data_o,idx1_out,out_size,out_row,out_col,out_channel,img_row,img_col,stride_h,stride_w,stored_num_groups_o,conv_row,conv_col);
+    //     // end
+    //     // $display("state = %d",state);
+    //     if(state == WAIT_OP) $display("op_total_data_counts = %d, expected_total = %d, groups = %d",op_total_data_counts, expected_total_data_counts,groups);
+    //     // if(state == WAIT_META) $display("wait_meta, metadata_done = %d, weight_num_reg = %d",metadata_done,weight_num_reg);
+    // end
 
     always @(posedge s00_axis_aclk) begin
         if(!s00_axis_aresetn) begin

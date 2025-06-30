@@ -49,20 +49,13 @@ set target_library {saed32rvt_tt1p05v25c.db}
 #======================================================
 #  Global Parameters
 #======================================================
-set DESIGN "op_decoder"
+set DESIGN "npu"
 set hdlin_ff_always_sync_set_reset true
 set CYCLE 7.0
 
 #======================================================
 #  Read RTL Code
 #======================================================
-# analyze -f sverilog -define {synthesis=1} {
-#     ADD.v
-#     ADD_Element.v
-#     MultiplyByQuantizedMultiplier.v
-#     MultiplyByQuantizedMultiplierSmallerThanOneExp.v
-# }
-# read_sverilog {
 analyze -f sverilog -define {synthesis=1} {
     npu.v
     axi_stream_output.v
@@ -90,6 +83,7 @@ analyze -f sverilog -define {synthesis=1} {
     broadcast_unit.v
     DW_mult_pipe.v
     DW02_mult.v
+    params.vh
 }
 # analyze -f sverilog npu.v
 elaborate $DESIGN
@@ -108,12 +102,12 @@ set_wire_load_mode top
 #======================================================
 #  Set Design Constraints
 #======================================================
-create_clock -name "clk" -period $CYCLE clk 
-set_input_delay  [ expr $CYCLE*0.5 ] -clock clk [all_inputs]
-set_output_delay [ expr $CYCLE*0.5 ] -clock clk [all_outputs]
-set_input_delay 0 -clock clk clk
-set_load 0.05 [all_outputs]
-# read_sdc constraints.sdc
+# create_clock -name "clk" -period $CYCLE clk 
+# set_input_delay  [ expr $CYCLE*0.5 ] -clock clk [all_inputs]
+# set_output_delay [ expr $CYCLE*0.5 ] -clock clk [all_outputs]
+# set_input_delay 0 -clock clk clk
+# set_load 0.05 [all_outputs]
+read_sdc constraints.sdc
 # set_multicycle_path -setup 2 -through {exp_pipeline/*}
 
 # ---------- Fan‑out constraint (legacy‑safe) ----------
@@ -161,7 +155,8 @@ set_optimize_registers true
 set_dont_touch DW_mult_pipe_*
 set_false_path -from s00_axis_aresetn
 set_false_path -from m00_axis_aresetn
-compile_ultra -retime -gate_clock -timing_high_effort
+compile_ultra -gate_clock -timing_high_effort
+# compile_ultra 
 
 ##############################
 # 6. Post‑compile fan‑out check (legacy) #
@@ -214,8 +209,9 @@ write_sdf -version 2.1 -context verilog -load_delay cell Netlist/$DESIGN\_SYN.sd
 report_area
 report_timing
 # report_reference -hierarchy
-report_timing -max_paths 10
+# report_timing -max_paths 10
 #======================================================
 #  Finish and Quit
 #======================================================
 # exit
+#==========================

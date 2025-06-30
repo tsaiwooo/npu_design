@@ -23,7 +23,8 @@ module sram_64bits
     wire [MAX_ADDR_WIDTH-1: 0] word_addr;
     assign word_addr = addr_i >> 3;
 
-    wire [SRAM_WIDTH_O-1:0] d_even = (word_addr[0] == 1'b0)? RAM [word_addr>>1]: RAM[word_addr>>1+1];
+
+    wire [SRAM_WIDTH_O-1:0] d_even = (word_addr[0] == 1'b0)? RAM [word_addr>>1]: RAM[(word_addr>>1)+1'b1];
     wire [SRAM_WIDTH_O-1:0] d_odd  = RAM1[word_addr>>1];
 
     always@(posedge clk_i) begin

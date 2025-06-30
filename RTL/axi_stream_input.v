@@ -33,16 +33,6 @@ module axi_stream_input #
     output reg signed [DATA_WIDTH-1:0] write_data,
     output reg [2:0]              data_type,      // different op weight sram
     output reg                    data_ready,
-    // output reg [ADDR_WIDTH-1:0]   batch,
-    // output reg [ADDR_WIDTH-1:0]   img_row,
-    // output reg [ADDR_WIDTH-1:0]   img_col,
-    // output reg [ADDR_WIDTH-1:0]   in_channel,
-    // output reg [ADDR_WIDTH-1:0]   ker_row,
-    // output reg [ADDR_WIDTH-1:0]   ker_col,
-    // output reg [ADDR_WIDTH-1:0]   output_channel,
-    // output reg [3:0]              stride_h,
-    // output reg [3:0]              stride_w,
-    // output reg                    padding,
     output reg [NUM_CHANNELS_WIDTH-1:0] num_channels
 );
     // reg [ADDR_WIDTH-1:0] batch,img_row,img_col,in_channel,ker_row,ker_col,output_channel;

@@ -161,10 +161,6 @@ task read_metadata(ref metadata_t meta_array[0:9999], output int meta_count);
     // 若行中包含終止字串 "1234567890" ，則結束
     if (line == "1234567890")
       break;
-    // 此行應該是 op，例如 "0000000000110001"
-    // 這裡使用 $sscanf 將字串轉成 16 位的 bit vector（格式 "%b"）
-    // r = $sscanf(line, "%s",tok);
-    // if(tok == "1234567890") break;
     r = $sscanf(line, "%b", tmp.op);
     $display("tok = %s, op = %b",tok, tmp.op);
     op[0] = tmp.op[3:0];
@@ -172,9 +168,7 @@ task read_metadata(ref metadata_t meta_array[0:9999], output int meta_count);
     op[2] = tmp.op[11:8];
     op[3] = tmp.op[15:12];
     $display("op0 = %b, op1 = %b, op2 = %b, op3 = %b", op[0], op[1], op[2], op[3]);
-    // break;
-    // r = $sscanf(line, "%b", tmp.op);
-    // if(tmp.op == "1234567890") break;
+
 
     // 讀取 weight_num
     line = read_next_line(file);
@@ -308,58 +302,6 @@ task read_metadata(ref metadata_t meta_array[0:9999], output int meta_count);
         endcase
         i = i+1;
     end
-    // r = $sscanf(line, "%d %d %d", tmp.stride_h, tmp.stride_w, tmp.padding);
-
-    // // 讀取 image size: batch, img_row, img_col, in_channel
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
-
-    // // 讀取 kernel size: out_channel, ker_row, ker_col
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
-
-    // // 讀取 conv requant: conv_requant_multiplier, conv_requant_shift
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
-
-    // // 讀取 exp signals: exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.exp_deq_input_range_radius,
-    //             tmp.exp_deq_input_zero_point, tmp.exp_deq_input_multiplier, tmp.exp_deq_input_left_shift, tmp.exp_req_input_quantized_multiplier, tmp.exp_req_input_shift, tmp.exp_req_input_offset);
-
-    // // 讀取 reciprocal signals: reciprocal_deq_input_zero_point, reciprocal_deq_input_range_radius, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.reciprocal_deq_input_zero_point,
-    //             tmp.reciprocal_deq_input_range_radius, tmp.reciprocal_deq_input_multiplier, tmp.reciprocal_deq_input_left_shift, tmp.reciprocal_req_input_quantized_multiplier, tmp.reciprocal_req_input_shift, tmp.reciprocal_req_input_offset);
-    // // 讀取 ADD signals (12個數字)
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
-    //             tmp.add_input1_offset, tmp.add_input2_offset,
-    //             tmp.add_left_shift,
-    //             tmp.add_input1_multiplier, tmp.add_input2_multiplier,
-    //             tmp.add_input1_shift, tmp.add_input2_shift,
-    //             tmp.add_output_multiplier, tmp.add_output_shift,
-    //             tmp.add_output_offset,
-    //             tmp.add_quantized_activation_min, tmp.add_quantized_activation_max);
-
-    // // 讀取 SUB signals (12個數字)
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
-    //             tmp.sub_input1_offset, tmp.sub_input2_offset,
-    //             tmp.sub_left_shift,
-    //             tmp.sub_input1_multiplier, tmp.sub_input2_multiplier,
-    //             tmp.sub_input1_shift, tmp.sub_input2_shift,
-    //             tmp.sub_output_multiplier, tmp.sub_output_shift,
-    //             tmp.sub_output_offset,
-    //             tmp.sub_quantized_activation_min, tmp.sub_quantized_activation_max);
-
-    // // 讀取 MUL signals (7個數字)
-    // // line = read_next_line(file);
-    // r = $sscanf(line, "%d %d %d %d %d %d %d",
-    //             tmp.mul_input1_offset, tmp.mul_input2_offset,
-    //             tmp.mul_output_multiplier, tmp.mul_output_shift,
-    //             tmp.mul_output_offset,
-    //             tmp.mul_quantized_activation_min, tmp.mul_quantized_activation_max);
 
     // 印出所有讀取到的資料
     $display("------------------------------------------------------");
@@ -398,14 +340,6 @@ task read_metadata(ref metadata_t meta_array[0:9999], output int meta_count);
     // 將該筆 metadata 儲存到陣列中
     meta_array[meta_count] = tmp;
     meta_count++;
-    // if(meta_count == 3 ) $finish;
-    // 接下來讀取一個分隔線（如果有），並繼續下一筆
-    // 讀取分隔線（如果存在）：
-    // line = read_next_line(file);
-    // line = remove_newline(line);
-    // 若讀到 "1234567890" 則跳出
-    // if (line == "1234567890")
-    //   break;
   end
 
   $fclose(file);
@@ -439,11 +373,9 @@ integer b, i, j, m, n, oc,ic;
 // 3) Buffers and arrays
 //----------------------------------------------
 
-// (A) 存放 image / weight
 reg signed [C_AXIS_TDATA_WIDTH-1:0] img_buffer    [0:2**18-1];
 reg signed [C_AXIS_TDATA_WIDTH-1:0] weight_buffer [0:2**ADDR_WIDTH-1];
 
-// (B) 新增：保存「卷積尚未 Requant」(累加) 與「Requant 後」的預期值
 reg signed [31:0] sum_before_requant [0:2**18-1];  // Requant 前的累加
 reg signed [C_AXIS_MDATA_WIDTH-1:0] expected_output [0:2**18-1]; // Requant 後的結果
 reg signed [31:0] exp_output [0:2**18-1]; // dequant+exp 後的結果
@@ -533,8 +465,6 @@ reg [31:0] op0_input_data_total_counts,op0_weight_total_counts, op1_weight_total
 //----------------------------------------------
 // 5) Requant 參數 (TB 中固定值) for convolution output
 //----------------------------------------------
-// reg [31:0]  test_q_multiplier = 32'd1388164317; 
-// reg signed [31:0] test_shift  = -9;
 reg [31:0]  test_q_multiplier;
 reg signed [31:0] test_shift;
 reg signed [31:0] test_output_offset;
@@ -1118,18 +1048,6 @@ begin
 
 end
 endtask
-
-// Instantiate exp_pipeline module
-// exp_pipeline exp_inst(
-//     .clk(s00_axis_aclk),
-//     .rst(s00_axis_aresetn),
-//     .x(dequant_val),
-//     .integer_bits(4'd4),  // Q4.27 format
-//     .input_valid(input_valid_exp),
-//     .exp_x(exp_x),
-//     .output_valid(output_valid_exp)
-// );
-
 //----------------------------------------------
 // 17) Check output & Compare
 //     - 一併印出 "requant前的值", "expected", "got"
@@ -1142,7 +1060,6 @@ task check_output;
     reg [7:0]  received_strb;   // 用於儲存位元組使能信號
     reg signed [7:0]  received_byte;   // 臨時儲存提取的有效位元組
 begin
-    // total_elements = (img_row - ker_row + 1)/stride_w * (img_col - ker_col + 1)/stride_h * out_channel;
     // total_elements = (img_row - ker_row + 1)/stride_w * (img_col - ker_col + 1)/stride_h * out_channel;
     total_elements = op0_data_counts;
     idx = 0;
@@ -1164,7 +1081,6 @@ begin
         for_loop : for (byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
             // if (received_strb[byte_idx]) begin
             // if (byte_idx < m00_axis_tstrb) begin
-                // 提取有效位元組
                 received_byte = received_data[byte_idx*8 +: 8];
                 
                 // 比較有效位元組與預期輸出

@@ -1,6 +1,7 @@
-`include "params.vh"
 `ifndef __FUNCTION_VH__
 `define __FUNCTION_VH__
+`include "params.vh"
+
 function automatic signed [31:0] dequant_saturate(
     input signed [7:0] data_in,
     input signed [31:0] input_zero_point,
@@ -40,12 +41,8 @@ function automatic [INT32_SIZE-1:0] mod_func(
     reg [INT32_SIZE-1:0] mod_result;
     begin
         mod_result = index;
-        for_loop: for(i = 0; i<10; i = i+1) begin
-            if(mod_result < mod_value) begin
-                ;
-            end else begin
-                mod_result = mod_result - mod_value;
-            end
+        for(i = 0; i<10 && mod_result >= mod_value; i = i+1) begin
+            mod_result = mod_result - mod_value;
         end
         mod_func = mod_result;
     end

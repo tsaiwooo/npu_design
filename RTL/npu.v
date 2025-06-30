@@ -21,7 +21,8 @@ module npu #
     parameter MAX_CHANNELS = 64,
     parameter NUM_CHANNELS_WIDTH = $clog2(MAX_CHANNELS+1),
     parameter QUANT_WIDTH = 32,
-    parameter MAX_VECTOR_SIZE = 8
+    parameter MAX_VECTOR_SIZE = 8,
+    parameter MAX_GROUPS = 8
 )
 (
     /* AXI slave interface (input to the FIFO) */
@@ -144,13 +145,15 @@ module npu #
     input wire [MAX_ADDR_WIDTH-1:0] op0_data_counts,
     // -------------------------------------
     // output for cycles
-    output reg [31:0] cycle_count,
-    output wire [31:0] sram_access_counts,
-    output reg [31:0] dram_access_counts
+    output reg [63:0] cycle_count,
+    output wire [63:0] sram_access_counts,
+    output reg [63:0] dram_access_counts,
+    output reg [63:0] element_idle_time
 );
     // memory access counts
-    wire [31:0] total_mem_access_counts;
-    assign sram_access_counts = total_mem_access_counts - dram_access_counts;
+    wire [63:0] total_mem_access_counts,store_access_sram_counts;
+    assign sram_access_counts = store_access_sram_counts;
+    // assign sram_access_counts = total_mem_access_counts - dram_access_counts;
     reg [2:0] state = IDLE, next_state;
     // axi_stream_input signals
     wire                    write_enable;
@@ -166,7 +169,7 @@ module npu #
     // wire [3:0]             stride_h, stride_w;
     // wire [ADDR_WIDTH-1:0]   in_channel, out_channel;
     // wire                    padding ;
-    wire [5:0]              input_data_idx;
+    wire [MAX_ADDR_WIDTH-1:0]              input_data_idx;
     // wire [ADDR_WIDTH-1:0]   batch;
     wire [2:0]              weight_num_reg;  
 
@@ -181,7 +184,7 @@ module npu #
     wire mac_valid_out;
 
     // output index control (elementwise and GEMM)
-    wire [MAX_ADDR_WIDTH-1:0] GEMM_results_counts, ele_results_counts, cur_counts,ele_valid_in_counts;
+    wire [31:0] GEMM_results_counts, ele_results_counts, cur_counts,ele_valid_in_counts;
     assign cur_counts = (op == CONV_OP || op == FC_OP)? GEMM_results_counts : MAX_VECTOR_SIZE * ele_results_counts;
 
     // output size
@@ -199,6 +202,7 @@ module npu #
     wire [ADDR_WIDTH-1:0] for_conv_col;
     wire [MAX_ADDR_WIDTH-1:0] weight_idx;
     wire [8:0]            input_data_cur_idx;
+    wire [$clog2(MAX_GROUPS+1) -1:0] groups;
 
 
     // SRAM OUTPUT DATA
@@ -249,7 +253,7 @@ module npu #
 
     // Enable different engines
     always @(*) begin
-        GEMM_en = ((op == CONV_OP || op == FC_OP) && state == WAIT_OP && MAX_VECTOR_SIZE*ele_valid_in_counts < op0_data_counts)? 1'b1 : 1'b0;
+        GEMM_en = ((op == CONV_OP || op == FC_OP) && state == WAIT_OP && ele_valid_in_counts < op0_data_counts)? 1'b1 : 1'b0;
         exp_en = (op == EXP_OP && state == WAIT_OP && MAX_VECTOR_SIZE*ele_valid_in_counts < op0_data_counts)? 1'b1 : 1'b0;
         reciprocal_en = (op == RECIPROCAL_OP && state == WAIT_OP && MAX_VECTOR_SIZE*ele_valid_in_counts < op0_data_counts)? 1'b1 : 1'b0;
         add_en = (op == ADD_OP && state == WAIT_OP && MAX_VECTOR_SIZE*ele_valid_in_counts < op0_data_counts)? 1'b1 : 1'b0;
@@ -373,6 +377,7 @@ module npu #
         // quantized multiplier and shift given by testbench temporarily
         .quantized_multiplier(quantized_multiplier),
         .shift(shift),
+        .groups(groups),
         .output_offset(gemm_output_offset),
         .GEMM_valid_o(GEMM_valid_o),
         .GEMM_results_counts(GEMM_results_counts)
@@ -390,6 +395,7 @@ module npu #
         .clk(s00_axis_aclk),
         .rst(s00_axis_aresetn),
         .init(state == OP_DONE),
+        .groups(4'd8),
         .broadcast(op0_broadcast),
         .exp_en(exp_en),
         .reciprocal_en(reciprocal_en),
@@ -486,6 +492,7 @@ module npu #
         .s_axis_tready(s00_axis_tready),
         .s_axis_tlast(s00_axis_tlast),
         .s_axis_tuser(s00_axis_tuser),
+        .init(state == OP_DONE),
         .write_enable(write_enable),
         .write_address(write_address),
         .write_data(write_data),
@@ -607,11 +614,12 @@ module npu #
         .result_sram_data_i(result_sram_data_i_sel),
         .result_sram_idx(store_sram_idx0),
         // total memoory access counts
-        .total_mem_access_counts(total_mem_access_counts)
+        .total_mem_access_counts(total_mem_access_counts),
+        .store_access_sram_counts(store_access_sram_counts)
     );
 
-    assign valid_mask = 8'b1;
-    assign repacker_data_i = { 56'b0, GEMM_out[7:0]};
+    assign valid_mask = (1 << groups) - 1;
+    assign repacker_data_i = GEMM_out;
     assign repacker_last = (GEMM_results_counts >= op0_data_counts)? 1'b1 : 1'b0;
     repacker #
     (
@@ -687,5 +695,19 @@ module npu #
         end
     end 
 
+    // element idle time, 這是算elementwise op time, 所以算出來要total_cycles 減去這數目
+    always @(posedge s00_axis_aclk) begin
+        if(!s00_axis_aresetn) begin
+            element_idle_time <= 0;
+        end else if(state == WAIT_OP && !GEMM_en) begin
+            element_idle_time <= element_idle_time + 1;
+        end
+    end
+
     // DEBUG
+    always @(posedge s00_axis_aclk) begin
+        if(state == WAIT_OP) begin
+            // $display("cur_counts: %d, op0_data_counts: %d",cur_counts,op0_data_counts);
+        end
+    end
 endmodule

@@ -62,7 +62,8 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 64)
     input [C_AXIS_TDATA_WIDTH-1:0] result_sram_data_i,
 
     // sram access counts
-    output reg [31:0] total_mem_access_counts
+    output reg [63:0] total_mem_access_counts,
+    output reg [63:0] store_access_sram_counts
 );
     reg [3:0] mem_access_this_cycle;
     reg [NUM_SRAMS-1:0] en;
@@ -105,7 +106,7 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 64)
                 arb_en[sram_idx] = 1'b1;
                 arb_addr[sram_idx * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = result_sram_addr_i;
                 arb_data_in[sram_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = result_sram_data_i;
-                $display("result_sram_we");
+                // $display("result_sram_we");
             end
             else if(gemm1_en && gemm1_idx == sram_idx)begin
                 arb_en[sram_idx] = 1'b1;
@@ -134,12 +135,12 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 64)
                 arb_en[sram_idx] = 1'b1;
                 arb_addr[sram_idx * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = write_address;
                 arb_data_in[sram_idx * C_AXIS_TDATA_WIDTH +: C_AXIS_TDATA_WIDTH] = write_data;
-                $display("Writing weight data to SRAM[%d], address = %d, data = %h",axi_idx, write_address, write_data);
+                // $display("Writing weight data to SRAM[%d], address = %d, data = %h",axi_idx, write_address, write_data);
             end
             else if(sram_out_en && sram_out_idx == sram_idx)begin
                 arb_en[sram_idx] = 1'b1;
                 arb_addr[sram_idx * MAX_ADDR_WIDTH +: MAX_ADDR_WIDTH] = sram_out_addr;
-                $display("sram_out_en, addr = %d, data = %h", sram_out_addr, sram_out_data);
+                // $display("sram_out_en, addr = %d, data = %h", sram_out_addr, sram_out_data);
             end
         end
     end
@@ -162,6 +163,20 @@ module sram_controller# ( parameter C_AXIS_TDATA_WIDTH = 64)
             total_mem_access_counts <= 0;
         end else begin
             total_mem_access_counts <= total_mem_access_counts + mem_access_this_cycle;
+        end
+    end
+
+    always @(posedge clk) begin
+        if(!rst) begin
+            store_access_sram_counts <= 0;
+        end else begin
+            if (result_sram_we && (op0_data_sram_en || gemm1_en)) begin
+                store_access_sram_counts <= store_access_sram_counts + 2'd2;
+            end else if(op0_data_sram_en || gemm1_en) begin
+                store_access_sram_counts <= store_access_sram_counts + 2'd1;
+            end else if (result_sram_we) begin
+                store_access_sram_counts <= store_access_sram_counts + 1'd1;
+            end 
         end
     end
     

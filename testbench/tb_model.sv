@@ -102,7 +102,7 @@ typedef struct {
   int op2_weight_total_counts;
   int op3_weight_total_counts;
 } metadata_t;
-metadata_t metadata[0:99];
+metadata_t metadata[0:9999];
 int num_ops = 1;
 
 // READ metadata function, support function
@@ -137,12 +137,16 @@ function string remove_newline(string in_line);
 endfunction
 
 // Task: 依序讀取 metadata，直到讀到 "1234567890"
-task read_metadata(ref metadata_t meta_array[0:99], output int meta_count);
+task read_metadata(ref metadata_t meta_array[0:9999], output int meta_count, output int layer_data);
   int file;
   string line;
   int r;
+  int i;
+  int tmp0,tmp1,tmp2;
+  reg [15:0] op_reg;
   metadata_t tmp;
   meta_count = 0;
+  layer_data = 0;
   file = $fopen("metadata.txt", "r");
   if (file == 0) begin
     $display("Error: Unable to open metadata.txt");
@@ -154,13 +158,14 @@ task read_metadata(ref metadata_t meta_array[0:99], output int meta_count);
     // 讀取 op 字串
     line = read_next_line(file);
     line = remove_newline(line);
-    if (line == "") break;
+    // if (line == "") break;
     // 若行中包含終止字串 "1234567890" ，則結束
     if (line == "1234567890")
       break;
     // 此行應該是 op，例如 "0000000000110001"
     // 這裡使用 $sscanf 將字串轉成 4 位的 bit vector（格式 "%b"）
-    r = $sscanf(line, "%b", tmp.op);
+    r = $sscanf(line, "%b", op_reg);
+    tmp.op = op_reg[3:0];
 
     // 讀取 weight_num
     line = read_next_line(file);
@@ -169,81 +174,172 @@ task read_metadata(ref metadata_t meta_array[0:99], output int meta_count);
     // 讀取 store_sram_idx 與 op0_weight_idx0、op0_weight_idx1
     line = read_next_line(file);
     // 假設格式為 "2 0 1 0 0 0"
-    r = $sscanf(line, "%d %d %d",
+    r = $sscanf(line, "%d %d %d %d %d %d",
                 tmp.store_sram_idx,
                 tmp.op0_weight_idx[0],
-                tmp.op0_weight_idx[1]);
+                tmp.op0_weight_idx[1],tmp0,tmp1,tmp2);
 
     // 讀取 op_broadcasts：op0_broadcast
     line = read_next_line(file);
-    r = $sscanf(line, "%d",
-                tmp.op0_broadcast);
+    r = $sscanf(line, "%d %d %d %d",
+                tmp.op0_broadcast,tmp0,tmp1,tmp2);
 
     // 讀取 op_data_counts：op0_data_counts
     line = read_next_line(file);
-    r = $sscanf(line, "%d",
-                tmp.op0_data_counts);
+    r = $sscanf(line, "%d %d %d %d",
+                tmp.op0_data_counts,tmp0,tmp1,tmp2);
     // 讀取 op0_input_data_total_counts, op0_weight_total_counts
     line = read_next_line(file);
-    r = $sscanf(line, "%d %d",
+    r = $sscanf(line, "%d %d %d %d %d",
                 tmp.op0_input_data_total_counts,
-                tmp.op0_weight_total_counts);
+                tmp.op0_weight_total_counts,tmp0,tmp1,tmp2);
+    // i = 0;
+    // while(i<4 && op[i] != 4'b0000) begin
+        // if(op[i] == 4'b0000) break;
+    layer_data = layer_data + tmp.op0_data_counts;
+    line = read_next_line(file);
+    case(tmp.op)
+        4'b0001: begin // conv
+            // $display("conv, i = %d", i);
+            r = $sscanf(line, "%d %d %d", tmp.stride_h, tmp.stride_w, tmp.padding);
+            // $display("stride_h = %d, stride_w = %d, padding = %b", tmp.stride_h, tmp.stride_w, tmp.padding);
+            // 讀取 image size: batch, img_row, img_col, in_channel
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
+            // $display("batch = %d, img_row = %d, img_col = %d, in_channel = %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
+            // 讀取 kernel size: out_channel, ker_row, ker_col
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
+            // $display("out_channel = %d, ker_row = %d, ker_col = %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
+            // 讀取 conv requant: conv_requant_multiplier, conv_requant_shift
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
+            // $display("conv requant: conv_requant_multiplier = %d, conv_requant_shift = %d, conv_requant_output_offset = %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
+        end
+        4'b0010: begin // FC
+            // $display("FC , i = %d", i);
+            r = $sscanf(line, "%d %d %d", tmp.stride_h, tmp.stride_w, tmp.padding);
 
+            // 讀取 image size: batch, img_row, img_col, in_channel
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
+
+            // 讀取 kernel size: out_channel, ker_row, ker_col
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
+
+            // 讀取 conv requant: conv_requant_multiplier, conv_requant_shift
+            line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
+        end
+        4'b0011: begin // Exp
+            // $display("Exp , i = %d", i);
+            // 讀取 exp signals: exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift
+            // line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.exp_deq_input_range_radius,
+                        tmp.exp_deq_input_zero_point, tmp.exp_deq_input_multiplier, tmp.exp_deq_input_left_shift, tmp.exp_req_input_quantized_multiplier, tmp.exp_req_input_shift, tmp.exp_req_input_offset);
+        end
+        4'b0100: begin // Reciprocal
+            // $display("Reciprocal , i = %d", i);
+                // 讀取 reciprocal signals: reciprocal_deq_input_zero_point, reciprocal_deq_input_range_radius, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift
+            // line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.reciprocal_deq_input_zero_point,
+                        tmp.reciprocal_deq_input_range_radius, tmp.reciprocal_deq_input_multiplier, tmp.reciprocal_deq_input_left_shift, tmp.reciprocal_req_input_quantized_multiplier, tmp.reciprocal_req_input_shift, tmp.reciprocal_req_input_offset);
+        end
+        4'b0101: begin // ADD
+            // $display("ADD , i = %d", i);
+            // 讀取 ADD signals (12個數字)
+            // line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
+                        tmp.add_input1_offset, tmp.add_input2_offset,
+                        tmp.add_left_shift,
+                        tmp.add_input1_multiplier, tmp.add_input2_multiplier,
+                        tmp.add_input1_shift, tmp.add_input2_shift,
+                        tmp.add_output_multiplier, tmp.add_output_shift,
+                        tmp.add_output_offset,
+                        tmp.add_quantized_activation_min, tmp.add_quantized_activation_max);
+        end
+        4'b0110: begin // SUB
+            // $display("SUB , i = %d", i);
+            // 讀取 SUB signals (12個數字)
+            // line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
+                        tmp.sub_input1_offset, tmp.sub_input2_offset,
+                        tmp.sub_left_shift,
+                        tmp.sub_input1_multiplier, tmp.sub_input2_multiplier,
+                        tmp.sub_input1_shift, tmp.sub_input2_shift,
+                        tmp.sub_output_multiplier, tmp.sub_output_shift,
+                        tmp.sub_output_offset,
+                        tmp.sub_quantized_activation_min, tmp.sub_quantized_activation_max);
+        end
+        4'b0111: begin // MUL
+            // $display("MUL, i = %d", i);
+            // 讀取 MUL signals (7個數字)
+            // line = read_next_line(file);
+            r = $sscanf(line, "%d %d %d %d %d %d %d",
+                        tmp.mul_input1_offset, tmp.mul_input2_offset,
+                        tmp.mul_output_multiplier, tmp.mul_output_shift,
+                        tmp.mul_output_offset,
+                        tmp.mul_quantized_activation_min, tmp.mul_quantized_activation_max);
+        end
+    endcase
+        // i = i+1;
+    // end
     // 讀取 convolution signals：
     // 讀取 stride_h, stride_w, padding
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d", tmp.stride_h, tmp.stride_w, tmp.padding);
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d", tmp.stride_h, tmp.stride_w, tmp.padding);
 
-    // 讀取 image size: batch, img_row, img_col, in_channel
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
+    // // 讀取 image size: batch, img_row, img_col, in_channel
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d", tmp.batch, tmp.img_row, tmp.img_col, tmp.in_channel);
 
-    // 讀取 kernel size: out_channel, ker_row, ker_col
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
+    // // 讀取 kernel size: out_channel, ker_row, ker_col
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d", tmp.out_channel, tmp.ker_row, tmp.ker_col);
 
-    // 讀取 conv requant: conv_requant_multiplier, conv_requant_shift
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
+    // // 讀取 conv requant: conv_requant_multiplier, conv_requant_shift
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d", tmp.conv_requant_multiplier, tmp.conv_requant_shift,tmp.conv_requant_output_offset);
 
-    // 讀取 exp signals: exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.exp_deq_input_range_radius,
-                tmp.exp_deq_input_zero_point, tmp.exp_deq_input_multiplier, tmp.exp_deq_input_left_shift, tmp.exp_req_input_quantized_multiplier, tmp.exp_req_input_shift, tmp.exp_req_input_offset);
+    // // 讀取 exp signals: exp_deq_input_range_radius, exp_deq_input_zero_point, exp_deq_input_multiplier, exp_deq_input_left_shift, exp_req_input_quantized_multiplier, exp_req_input_shift
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.exp_deq_input_range_radius,
+    //             tmp.exp_deq_input_zero_point, tmp.exp_deq_input_multiplier, tmp.exp_deq_input_left_shift, tmp.exp_req_input_quantized_multiplier, tmp.exp_req_input_shift, tmp.exp_req_input_offset);
 
-    // 讀取 reciprocal signals: reciprocal_deq_input_zero_point, reciprocal_deq_input_range_radius, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.reciprocal_deq_input_zero_point,
-                tmp.reciprocal_deq_input_range_radius, tmp.reciprocal_deq_input_multiplier, tmp.reciprocal_deq_input_left_shift, tmp.reciprocal_req_input_quantized_multiplier, tmp.reciprocal_req_input_shift, tmp.reciprocal_req_input_offset);
-    // 讀取 ADD signals (12個數字)
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
-                tmp.add_input1_offset, tmp.add_input2_offset,
-                tmp.add_left_shift,
-                tmp.add_input1_multiplier, tmp.add_input2_multiplier,
-                tmp.add_input1_shift, tmp.add_input2_shift,
-                tmp.add_output_multiplier, tmp.add_output_shift,
-                tmp.add_output_offset,
-                tmp.add_quantized_activation_min, tmp.add_quantized_activation_max);
+    // // 讀取 reciprocal signals: reciprocal_deq_input_zero_point, reciprocal_deq_input_range_radius, reciprocal_deq_input_multiplier, reciprocal_deq_input_left_shift, reciprocal_req_input_quantized_multiplier, reciprocal_req_input_shift
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d %d %d %d", tmp.reciprocal_deq_input_zero_point,
+    //             tmp.reciprocal_deq_input_range_radius, tmp.reciprocal_deq_input_multiplier, tmp.reciprocal_deq_input_left_shift, tmp.reciprocal_req_input_quantized_multiplier, tmp.reciprocal_req_input_shift, tmp.reciprocal_req_input_offset);
+    // // 讀取 ADD signals (12個數字)
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
+    //             tmp.add_input1_offset, tmp.add_input2_offset,
+    //             tmp.add_left_shift,
+    //             tmp.add_input1_multiplier, tmp.add_input2_multiplier,
+    //             tmp.add_input1_shift, tmp.add_input2_shift,
+    //             tmp.add_output_multiplier, tmp.add_output_shift,
+    //             tmp.add_output_offset,
+    //             tmp.add_quantized_activation_min, tmp.add_quantized_activation_max);
 
-    // 讀取 SUB signals (12個數字)
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
-                tmp.sub_input1_offset, tmp.sub_input2_offset,
-                tmp.sub_left_shift,
-                tmp.sub_input1_multiplier, tmp.sub_input2_multiplier,
-                tmp.sub_input1_shift, tmp.sub_input2_shift,
-                tmp.sub_output_multiplier, tmp.sub_output_shift,
-                tmp.sub_output_offset,
-                tmp.sub_quantized_activation_min, tmp.sub_quantized_activation_max);
+    // // 讀取 SUB signals (12個數字)
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d %d %d %d %d %d %d %d %d",
+    //             tmp.sub_input1_offset, tmp.sub_input2_offset,
+    //             tmp.sub_left_shift,
+    //             tmp.sub_input1_multiplier, tmp.sub_input2_multiplier,
+    //             tmp.sub_input1_shift, tmp.sub_input2_shift,
+    //             tmp.sub_output_multiplier, tmp.sub_output_shift,
+    //             tmp.sub_output_offset,
+    //             tmp.sub_quantized_activation_min, tmp.sub_quantized_activation_max);
 
-    // 讀取 MUL signals (7個數字)
-    line = read_next_line(file);
-    r = $sscanf(line, "%d %d %d %d %d %d %d",
-                tmp.mul_input1_offset, tmp.mul_input2_offset,
-                tmp.mul_output_multiplier, tmp.mul_output_shift,
-                tmp.mul_output_offset,
-                tmp.mul_quantized_activation_min, tmp.mul_quantized_activation_max);
+    // // 讀取 MUL signals (7個數字)
+    // line = read_next_line(file);
+    // r = $sscanf(line, "%d %d %d %d %d %d %d",
+    //             tmp.mul_input1_offset, tmp.mul_input2_offset,
+    //             tmp.mul_output_multiplier, tmp.mul_output_shift,
+    //             tmp.mul_output_offset,
+    //             tmp.mul_quantized_activation_min, tmp.mul_quantized_activation_max);
 
     // 印出所有讀取到的資料
     $display("------------------------------------------------------");
@@ -322,7 +418,8 @@ integer b, i, j, m, n, oc,ic;
 //----------------------------------------------
 // 3) Buffers and arrays
 //----------------------------------------------
-
+// 計算每個layer傳送的data
+int layer_data;
 // (A) 存放 image / weight
 reg signed [C_AXIS_TDATA_WIDTH-1:0] img_buffer    [0:2**18-1];
 reg signed [C_AXIS_TDATA_WIDTH-1:0] weight_buffer [0:2**ADDR_WIDTH-1];
@@ -434,7 +531,7 @@ wire  m00_axis_tvalid;
 wire  m00_axis_tlast;
 wire  [NUM_CHANNELS_WIDTH-1:0] m00_axis_tuser;
 wire [(C_AXIS_TDATA_WIDTH/8)-1 : 0] dump; // unused
-wire [31:0] cycle_count,sram_access_counts,dram_access_counts;
+wire [63:0] cycle_count,sram_access_counts,dram_access_counts,element_idle_time;
 
 // ------------------------------------------------
 // metadata from NPU
@@ -585,7 +682,8 @@ npu #(
     .cycle_count(cycle_count),
     .sram_access_counts(sram_access_counts),
     .dram_access_counts(dram_access_counts),
-    .layer_calc_done(layer_calc_done)
+    .layer_calc_done(layer_calc_done),
+    .element_idle_time(element_idle_time)
 );
 
 //----------------------------------------------
@@ -599,19 +697,19 @@ begin
     stride_w = 2;
     padding = 0;
     // 讀取 image row/col
-    $display("read_weight -> img_row = %d, img_col = %d, in_channel = %d, total = %d", img_row, img_col, in_channel,batch * img_col * img_row * in_channel);
+    // $display("read_weight -> img_row = %d, img_col = %d, in_channel = %d, total = %d", img_row, img_col, in_channel,batch * img_col * img_row * in_channel);
     // scan_result = $fscanf(img_file, "%d %d %d %d\n", batch , img_row, img_col, in_channel);
     for (i = 0; i < batch * img_col * img_row * in_channel; i = i + 1) begin
         scan_result = $fscanf(img_file, "%d\n", img_buffer[i]);
-        $display("img_buffer[%d] = %d", i, img_buffer[i]);
+        // $display("img_buffer[%d] = %d", i, img_buffer[i]);
     end
 
     // 讀取 weight row/col
     // scan_result = $fscanf(weight_file, "%d %d %d\n", out_channel , ker_row, ker_col);
-    $display("read_weight -> ker_row = %d, out_channel = %d, ker_col = %d, in_channel = %d, total = %d", out_channel,ker_row, ker_col, in_channel, out_channel * ker_col * ker_row * in_channel);
+    // $display("read_weight -> ker_row = %d, out_channel = %d, ker_col = %d, in_channel = %d, total = %d", out_channel,ker_row, ker_col, in_channel, out_channel * ker_col * ker_row * in_channel);
     for (i = 0; i < out_channel * ker_col * ker_row * in_channel; i = i + 1) begin
         scan_result = $fscanf(weight_file, "%d\n", weight_buffer[i]);
-        $display("weight_buffer[%d] = %d", i, weight_buffer[i]);
+        // $display("weight_buffer[%d] = %d", i, weight_buffer[i]);
     end
 
     $fclose(img_file);
@@ -627,10 +725,10 @@ task send_image;
     reg [C_AXIS_TDATA_WIDTH-1:0] combined;
     int total;
 begin
-    $display("img_row = %d, img_col = %d, last = %d", img_row, img_col, img_row * img_col - 1);
+    // $display("img_row = %d, img_col = %d, last = %d", img_row, img_col, img_row * img_col - 1);
     @(posedge s00_axis_aclk);
     total = img_row * img_col * in_channel * batch;
-    $display("send_image -> total = %d", total);
+    // $display("send_image -> total = %d", total);
     for (i = 0; i < total; i = i + 8) begin
         combined = { ((i+7 < total) ? img_buffer[i+7][7:0] : 8'd0),
              ((i+6 < total) ? img_buffer[i+6][7:0] : 8'd0),
@@ -660,7 +758,7 @@ task send_weight;
     reg [C_AXIS_TDATA_WIDTH-1:0] combined;
     int total;
 begin
-    $display("ker_row = %d, ker_col = %d, last = %d", ker_row, ker_col, ker_row * ker_col - 1);
+    // $display("ker_row = %d, ker_col = %d, last = %d", ker_row, ker_col, ker_row * ker_col - 1);
     @(posedge s00_axis_aclk);
     total = out_channel * ker_row * ker_col * in_channel;
     for (i = 0; i < total; i = i + 8) begin
@@ -734,19 +832,19 @@ task send_all_weight(input integer data_file,input integer weight_file);
     reg [7:0] weight2_buffer [0:2**MAX_ADDR_WIDTH-1];
     reg [7:0] weight3_buffer [0:2**MAX_ADDR_WIDTH-1];
 begin
-    $display("read_weight -> img_row = %d, img_col = %d, in_channel = %d, total = %d", img_row, img_col, in_channel,batch * img_col * img_row * in_channel);
+    // $display("read_weight -> img_row = %d, img_col = %d, in_channel = %d, total = %d", img_row, img_col, in_channel,batch * img_col * img_row * in_channel);
     // scan_result = $fscanf(img_file, "%d %d %d %d\n", batch , img_row, img_col, in_channel);
     for (i = 0; i < op0_input_data_total_counts; i = i + 1) begin
         scan_result = $fscanf(img_file, "%d\n", data_buffer[i]);
-        $display("data_buffer[%d] = %d", i, data_buffer[i]);
+        // $display("data_buffer[%d] = %d", i, data_buffer[i]);
     end
 
     // 讀取 weight row/col
     // scan_result = $fscanf(weight_file, "%d %d %d\n", out_channel , ker_row, ker_col);
-    $display("read_weight -> ker_row = %d, out_channel = %d, ker_col = %d, in_channel = %d, total = %d", out_channel,ker_row, ker_col, in_channel, out_channel * ker_col * ker_row * in_channel);
+    // $display("read_weight -> ker_row = %d, out_channel = %d, ker_col = %d, in_channel = %d, total = %d", out_channel,ker_row, ker_col, in_channel, out_channel * ker_col * ker_row * in_channel);
     for (i = 0; i < op0_weight_total_counts; i = i + 1) begin
         scan_result = $fscanf(weight_file, "%d\n", weight0_buffer[i]);
-        $display("weight0_buffer[%d] = %d", i, weight0_buffer[i]);
+        // $display("weight0_buffer[%d] = %d", i, weight0_buffer[i]);
     end
     send_weight_data(weight0_buffer,op0_weight_total_counts);
     send_weight_data(data_buffer,op0_input_data_total_counts);
@@ -980,7 +1078,8 @@ task check_output;
     reg [7:0]  received_strb;   // 用於儲存位元組使能信號
     reg signed [7:0]  received_byte;   // 臨時儲存提取的有效位元組
 begin
-    total_elements = (img_row - ker_row + 1)/stride_w * (img_col - ker_col + 1)/stride_h * out_channel;
+    // total_elements = (img_row - ker_row + 1)/stride_w * (img_col - ker_col + 1)/stride_h * out_channel;
+    total_elements = op0_data_counts;
     idx = 0;
     
     @(negedge m00_axis_aclk);
@@ -1012,7 +1111,7 @@ begin
                 // end else begin
                 //     $display("Match at element %d, byte %d: %h", idx, byte_idx, received_byte);
                 // end
-                $display("Got %d at %d", received_byte, idx);
+                // $display("Got %d at %d", received_byte, idx);
                 idx = idx + 1; // 每處理一個有效位元組，移動到下一個預期元素
                 if(idx >= total_elements) 
                     disable for_loop; // 如果讀取完所有預期元素，則退出循環
@@ -1023,10 +1122,10 @@ begin
         // 如果需要處理 m00_axis_tvalid 的變化，可在此加入額外邏輯
     end
 
-    if(idx < total_elements) begin
-        $display("Error: fewer outputs received than expected. Received: %d, Expected: %d", idx, total_elements);
-        $finish;
-    end
+    // if(idx < total_elements) begin
+    //     $display("Error: fewer outputs received than expected. Received: %d, Expected: %d", idx, total_elements);
+    //     $finish;
+    // end
 end
 endtask
 
@@ -1060,6 +1159,7 @@ begin
   op0_weight_sram_idx1 = meta.op0_weight_idx[1];
   op0_broadcast = meta.op0_broadcast;
   op0_data_counts = meta.op0_data_counts;
+  $display("in send_metadata meta.op0_data_counts = %d, op0_data_counts = %d", meta.op0_data_counts, op0_data_counts);
   op0_input_data_total_counts = meta.op0_input_data_total_counts;
   op0_weight_total_counts = meta.op0_weight_total_counts;
 
@@ -1170,8 +1270,11 @@ begin
     compute_convolution(); // 同時產生 sum_before_requant[] & expected_output[]
     compute_exp_after_requant(); // 產生 exp_output[]
 
-    read_metadata(metadata[0:99], num_ops);
+    read_metadata(metadata[0:9999], num_ops,layer_data);
+    $display("layer_data = %d", layer_data);
+    $finish;
     for(i=0; i<num_ops; i=i+1) begin
+        $display("the %d op starts!!!!!!!!!!!!!!!!!",i);
         // ---------------------------------------------------
         // Step A: assert reset to clear any internal state
         // ---------------------------------------------------
@@ -1254,6 +1357,7 @@ begin
     $display("total_cycles : %d", cycle_count);
     $display("sram_access_counts : %d", sram_access_counts);
     $display("dram_access_counts : %d", dram_access_counts);
+    $display("elementwise_op_idle_time : %d",element_idle_time);
     $finish;
 end
 

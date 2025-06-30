@@ -15,6 +15,7 @@ module element_wise #
     input                  clk,
     input                  rst,
     input                  init,
+    input        [3:0]     groups,
     input signed [INT64_SIZE-1:0]                      data_in,
     input signed [INT64_SIZE-1:0]                      weight_data_in,
     input [2:0]            broadcast,
@@ -103,8 +104,8 @@ module element_wise #
     // -------------------------------------
     output reg [INT64_SIZE-1:0] ele_data_out,
     output                 ele_valid_out,
-    output reg [MAX_ADDR_WIDTH-1:0] ele_valid_in_counts,
-    output reg [MAX_ADDR_WIDTH-1:0] ele_results_counts
+    output reg [31:0] ele_valid_in_counts,
+    output reg [31:0] ele_results_counts
 );
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
@@ -129,7 +130,7 @@ module element_wise #
 
     wire [MAX_ADDR_WIDTH-1:0] ele_counter_en;
     assign ele_counter_en = exp_en | reciprocal_en | add_en | sub_en | mul_en;
-    assign ele_sram_en = ele_counter_en && (MAX_VECTOR_SIZE * ele_data_addr_o < output_data_counts_i);
+    assign ele_sram_en = ele_counter_en && (ele_data_addr_o < output_data_counts_i);
     // ele_data_out
     always @(*) begin
         if(exp_req_valid_out[0])begin
@@ -212,9 +213,9 @@ genvar i;
 generate
     for(i = 0; i < MAX_VECTOR_SIZE; i = i + 1) begin: exp_vec
         assign exp_dequant_data_in[i] = dequant_saturate(
-         data_in[i*INT8_WIDTH +: INT8_WIDTH],
-         exp_deq_input_zero_point, 
-         exp_deq_input_range_radius
+        data_in[i*INT8_WIDTH +: INT8_WIDTH],
+        exp_deq_input_zero_point, 
+        exp_deq_input_range_radius
         );
         MultiplyByQuantizedMultiplier MultiplyByQuantizedMultiplier_gemm_inst(
             .clk(clk),
@@ -249,8 +250,8 @@ generate
             .x_mul_by_quantized_multiplier(exp_req_data_out[i])
         );
         assign exp_result[i] = ((exp_req_data_out[i] + exp_req_input_offset)  > $signed(POS_127)) ? $signed(POS_127) :
-                               ((exp_req_data_out[i] + exp_req_input_offset)  < $signed(NEG_128)) ? $signed(NEG_128) :
-                               (exp_req_data_out[i] + exp_req_input_offset);
+                            ((exp_req_data_out[i] + exp_req_input_offset)  < $signed(NEG_128)) ? $signed(NEG_128) :
+                            (exp_req_data_out[i] + exp_req_input_offset);
     end
 endgenerate
 
@@ -297,8 +298,8 @@ generate
             .x_mul_by_quantized_multiplier(reciprocal_req_data_out[i])
         );
         assign reciprocal_result[i] = ((reciprocal_req_data_out[i] + reciprocal_req_input_offset) > $signed(POS_127)) ? $signed(POS_127) :
-                                      ((reciprocal_req_data_out[i] + reciprocal_req_input_offset) < $signed(NEG_128)) ? $signed(NEG_128) :
-                                      (reciprocal_req_data_out[i] + reciprocal_req_input_offset);
+                                    ((reciprocal_req_data_out[i] + reciprocal_req_input_offset) < $signed(NEG_128)) ? $signed(NEG_128) :
+                                    (reciprocal_req_data_out[i] + reciprocal_req_input_offset);
     end
 endgenerate
 

@@ -84,14 +84,14 @@ module MultiplyByQuantizedMultiplierSmallerThanOneExp #(
     //     else if (valid_stage1) ab_64_s2 <= ab_64_s1 * quantized_multiplier_reg_s1;
     // end
     // stage2a: 
-    reg overflow_s2b[0:DEPTH];
-    reg signed [31:0] neg_shift_s2b[0:DEPTH];
-    reg valid_2b[0:DEPTH];
+    reg overflow_s2b[0:DEPTH-1];
+    reg signed [31:0] neg_shift_s2b[0:DEPTH-1];
+    reg valid_2b[0:DEPTH-1];
     integer i;
 
     always @(posedge clk) begin
         if (!rst) begin
-            for(i = 0; i<=DEPTH; i = i+1) begin
+            for(i = 0; i<DEPTH; i = i+1) begin
                 overflow_s2b[i] <= 0;
                 neg_shift_s2b[i] <= 0;
                 valid_2b[i] <= 0;
@@ -100,7 +100,7 @@ module MultiplyByQuantizedMultiplierSmallerThanOneExp #(
             overflow_s2b[0] <= overflow_s1;
             neg_shift_s2b[0] <= neg_shift_s1;
             valid_2b[0] <= valid_stage1;
-            for(i = 0; i<DEPTH; i = i+1) begin
+            for(i = 0; i<DEPTH-1; i = i+1) begin
                 overflow_s2b[i+1] <= overflow_s2b[i];
                 neg_shift_s2b[i+1] <= neg_shift_s2b[i];
                 valid_2b[i+1] <= valid_2b[i];
@@ -110,10 +110,10 @@ module MultiplyByQuantizedMultiplierSmallerThanOneExp #(
     wire DW_mul_en;
     wire any_valid_2b;
     // 先把 unpacked copy 到一個 packed wire
-    wire [DEPTH:0] valid_2b_vec;
+    wire [DEPTH-1:0] valid_2b_vec;
     genvar j;
     generate
-    for (j=0; j<=DEPTH; j=j+1) begin
+    for (j=0; j<DEPTH; j=j+1) begin
         assign valid_2b_vec[j] = valid_2b[j];
     end
     endgenerate

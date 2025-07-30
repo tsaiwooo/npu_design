@@ -87,9 +87,9 @@ reg [9:0] start_idx;
 reg [9:0] group_start_addr[0:MAX_GROUPS-1]; // store group start address
 
 always @(*) begin
-    if(!rst)begin
-        start_idx = 0;  // initialize start_idx
-    end else if(valid_in) begin
+    // if(!rst)begin
+    //     start_idx = 0;  // initialize start_idx
+    // end else if(valid_in) begin
         // start calcuate group address
         start_idx = 0;  // initialize start_idx
         for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
@@ -99,12 +99,12 @@ always @(*) begin
             start_idx = start_idx + group_macs[group_idx];  // each MAC occupy DATA_WIDTH bandwidth
             // $display("group_start_addr[%0d] = %0d", group_idx, group_start_addr[group_idx]);
         end
-    end else begin
-        start_idx = 0;  // initialize start_idx
-        for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
-            group_start_addr[group_idx] = 0; // record current group start address
-        end
-    end
+    // end else begin
+    //     start_idx = 0;  // initialize start_idx
+    //     for (group_idx = 0; group_idx < MAX_GROUPS; group_idx = group_idx + 1) begin
+    //         group_start_addr[group_idx] = 0; // record current group start address
+    //     end
+    // end
 end
 
 

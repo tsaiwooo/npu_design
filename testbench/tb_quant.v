@@ -79,34 +79,34 @@ module MultiplyByQuantizedMultiplier_tb;
             $display("left_shift = %d, right_shift = %d", left_shift, right_shift);
             $display("ab_64 = %h", ab_64);
             $display("ab_x2_high32 = %h, mask = %h", ab_x2_high32, mask);
-            if (ab_64 < -128<<right_shift && right_shift) begin
-                golden_multiply_by_quantized_multiplier = -8'd128;
-            end else if (ab_64 > 127<<right_shift && right_shift) begin
-                golden_multiply_by_quantized_multiplier = 8'd127;
-            end else begin
-                mask = (1 << right_shift) - 1;
-                remainder = ab_x2_high32 & mask;
-                threshold = mask >> 1;
-                if (ab_x2_high32 < 0)
-                    threshold = threshold + 1;
+            // if (ab_64 < -128<<right_shift && right_shift) begin
+            //     golden_multiply_by_quantized_multiplier = -8'd128;
+            // end else if (ab_64 > 127<<right_shift && right_shift) begin
+            //     golden_multiply_by_quantized_multiplier = 8'd127;
+            // end else begin
+            mask = (1 << right_shift) - 1;
+            remainder = ab_x2_high32 & mask;
+            threshold = mask >> 1;
+            if (ab_x2_high32 < 0)
+                threshold = threshold + 1;
 
-                tmp_golden = ab_x2_high32 >>> right_shift;
-                $display("remainder = %h, threshold = %h, ab_x2_high32 = %h", remainder, threshold,ab_x2_high32);
-                $display("golden_multiply_by_quantized_multiplier = %h", tmp_golden);
-                if (remainder > threshold)begin
-                    golden_multiply_by_quantized_multiplier = (tmp_golden >= $signed(POS_127))? POS_127:
-                                                               (tmp_golden < $signed(NEG_128))? NEG_128: tmp_golden + 1;
-                end
-                // else if(tmp_golden > $signed(POS_127)) begin
-                //     golden_multiply_by_quantized_multiplier = 127;
-                // end
-                // else if(tmp_golden < $signed(NEG_128)) begin
-                //     golden_multiply_by_quantized_multiplier = -128;
-                // end
-                else begin
-                    golden_multiply_by_quantized_multiplier = tmp_golden;
-                end
+            tmp_golden = ab_x2_high32 >>> right_shift;
+            $display("remainder = %h, threshold = %h, ab_x2_high32 = %h", remainder, threshold,ab_x2_high32);
+            $display("golden_multiply_by_quantized_multiplier = %h", tmp_golden);
+            if (remainder > threshold)begin
+                golden_multiply_by_quantized_multiplier = (tmp_golden >= $signed(POS_127))? POS_127:
+                                                            (tmp_golden < $signed(NEG_128))? NEG_128: tmp_golden + 1;
             end
+            // else if(tmp_golden > $signed(POS_127)) begin
+            //     golden_multiply_by_quantized_multiplier = 127;
+            // end
+            // else if(tmp_golden < $signed(NEG_128)) begin
+            //     golden_multiply_by_quantized_multiplier = -128;
+            // end
+            else begin
+                golden_multiply_by_quantized_multiplier = tmp_golden;
+            end
+            // end
         end
     endfunction
 
@@ -133,7 +133,7 @@ module MultiplyByQuantizedMultiplier_tb;
         test_x[6] = 32'hFFFFFFFA; test_quantized_multiplier[6] = 32'd1591541760; test_shift[6] = 22;
         golden_results[6] = golden_multiply_by_quantized_multiplier(test_x[6], test_quantized_multiplier[6], test_shift[6]);
 
-        test_x[7] = 32'h4; test_quantized_multiplier[7] = 32'd1591541760; test_shift[7] = 22;
+        test_x[7] = 32'd10136; test_quantized_multiplier[7] = 32'd1401439872; test_shift[7] = -9;
         golden_results[7] = golden_multiply_by_quantized_multiplier(test_x[7], test_quantized_multiplier[7], test_shift[7]);
     end
 

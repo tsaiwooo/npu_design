@@ -61,7 +61,7 @@ module GEMM #
     // after requant
     // output wire [ADDR_WIDTH-1:0]  requant_idx_o
     // requant num of groups
-    output reg [3:0] stored_num_groups_o
+    output wire [3:0] stored_num_groups_o
 );
     localparam signed [7:0] NEG_128 = -128;
     localparam signed [7:0] POS_127 =  127;
@@ -72,6 +72,7 @@ module GEMM #
     wire [MAX_MACS*DATA_WIDTH-1:0] weight_mac_i;
     wire [3:0] num_groups_i;
     wire [MAX_GROUPS * MAC_BIT_PER_GROUP -1:0] num_macs_i;
+    reg [MAX_GROUPS * MAC_BIT_PER_GROUP -1:0] num_macs_i_reg;
     wire [MAX_GROUPS * QUANT_WIDTH-1:0] mac_to_conv_i;
     wire [3:0] num_groups_o;
     
@@ -118,6 +119,8 @@ module GEMM #
             cur_blocks <= 0;
         end else if(init) begin
             cur_blocks <= 0;
+        end else if(mac_out_to_conv_i === {256{1'bX}}) begin
+            cur_blocks <= 0;
         end else if(cur_blocks + 1 == total_blocks && mac_valid_out) begin
             cur_blocks <= 0;
         end else if(is_greater_64 && mac_valid_out) begin
@@ -132,6 +135,8 @@ module GEMM #
             accu <= 0;
         end else if(req_valid_in) begin 
             accu <= 0;
+        end else if(mac_out_to_conv_i === {256{1'bX}}) begin
+            accu <= accu;
         end else if(is_greater_64 && mac_valid_out) begin
             accu <= accu + $signed(mac_out_to_conv_i[31:0]);
         end
@@ -148,15 +153,37 @@ module GEMM #
         end
     end
 
-    always @(posedge clk)begin
-        if(!rst)begin
-            stored_num_groups_o <= 0;
-        end else if(init) begin
-            stored_num_groups_o <= 0; 
-        end else if(is_stored)begin
-            stored_num_groups_o <= num_groups_o;
+    always @(posedge clk) begin
+        if(!rst) num_macs_i_reg <= 0;
+        else if(init) num_macs_i_reg <= 0;
+        else begin
+            // num_macs_i_reg <= (is_greater_64)? {num_groups_o, 1'b0} : {num_groups_o, 1'b1};
+            num_macs_i_reg <= num_macs_i;
         end
     end
+    // always @(posedge clk)begin
+    //     if(!rst)begin
+    //         stored_num_groups_o <= 0;
+    //     end else if(init) begin
+    //         stored_num_groups_o <= 0; 
+    //     end else if(is_stored)begin
+    //         stored_num_groups_o <= num_groups_o;
+    //     end
+    // end
+    // reg [15:0] groups_per_mac;
+    // always @(posedge clk) begin
+    //   if(!rst) begin
+    //         groups_per_mac <= 0;
+    //     end else if(init) begin
+    //         groups_per_mac <= 0; 
+    //     end else if(mac_data_ready && (groups_per_mac + num_groups_o) < out_channel) begin
+    //         groups_per_mac <= groups_per_mac + num_groups_o;
+    //     end else if(mac_data_ready && (groups_per_mac + num_groups_o) >= out_channel) begin
+    //         groups_per_mac <= 0;
+    //     end
+    // end
+    // assign stored_num_groups_o = (mac_data_ready && (groups_per_mac + num_groups_o) >= out_channel)? (out_channel - groups_per_mac) :num_groups_o;
+    assign stored_num_groups_o = num_groups_o;
 
     convolution #
     (
@@ -213,7 +240,7 @@ module GEMM #
         .clk(clk),
         .rst(rst),
         .num_groups(num_groups_i),
-        .num_macs_i(num_macs_i),
+        .num_macs_i(num_macs_i_reg),
         .valid_in(mac_data_ready),
         .data(data_mac_i),
         .weight(weight_mac_i),
@@ -258,6 +285,9 @@ generate
 endgenerate
     assign requant_output_valid_o = requant_output_valid_o_array[0];
     assign mac_out = { requant_8bits_out_array[7], requant_8bits_out_array[6], requant_8bits_out_array[5], requant_8bits_out_array[4], requant_8bits_out_array[3], requant_8bits_out_array[2], requant_8bits_out_array[1], requant_8bits_out_array[0]};
+    // DEBUG
+    // assign requant_output_valid_o = (is_greater_64)? req_valid_in : mac_valid_out;
+    // assign mac_out = (is_greater_64)? req_input[7:0]: {mac_out_to_conv_i[231:224], mac_out_to_conv_i[199:192], mac_out_to_conv_i[167:160], mac_out_to_conv_i[135:128],mac_out_to_conv_i[103:96],mac_out_to_conv_i[71:64],mac_out_to_conv_i[39:32],mac_out_to_conv_i[7:0]};
 
     // requant_idx control by requant_output_valid_o 
     reg [17:0] requant_idx;

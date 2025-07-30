@@ -279,7 +279,15 @@ module op_decoder #
                           (op3 == 4'b0101) ? add_data_out :
                           (op3 == 4'b0110) ? sub_data_out :
                           (op3 == 4'b0111) ? mul_data_out : 0;
-
+    //num_groups delay
+    reg [3:0] num_groups_reg;
+    always @(posedge clk) begin
+        if(!rst) begin
+            num_groups_reg <= 0;
+        end else begin
+            num_groups_reg <= num_groups;
+        end
+    end
     // 2-stage to store data for data_out from each engine
     // ---------------------------------------------------
     always @(posedge clk) begin
@@ -682,7 +690,7 @@ module op_decoder #
         end else if(init) begin
             op0_counter <= 0;
         end else if(op0_done_reg_d) begin
-            op0_counter <= op0_counter +  num_groups;
+            op0_counter <= op0_counter +  num_groups_reg;
         end
     end
 
@@ -692,7 +700,7 @@ module op_decoder #
         end else if(init) begin
             op1_counter <= 0;
         end else if(op1_done_reg_d) begin
-            op1_counter <= op1_counter +  num_groups;
+            op1_counter <= op1_counter +  num_groups_reg;
         end
     end
 
@@ -702,7 +710,7 @@ module op_decoder #
         end else if(init) begin
             op2_counter <= 0;
         end else if(op2_done_reg_d) begin
-            op2_counter <= op2_counter +  num_groups;
+            op2_counter <= op2_counter +  num_groups_reg;
         end
     end
 
@@ -712,7 +720,7 @@ module op_decoder #
         end else if(init) begin
             op3_counter <= 0;
         end else if(op3_done_reg_d) begin
-            op3_counter <= op3_counter +  num_groups;
+            op3_counter <= op3_counter +  num_groups_reg;
         end
     end
 
@@ -724,7 +732,7 @@ module op_decoder #
         end else if(init) begin
             op0_weight_counter <= 0; 
         end else if (op0_done && (op0 == 4'b0101 || op0 == 4'b0110 || op0 == 4'b0111)) begin
-            op0_weight_counter <= op0_weight_counter + num_groups;
+            op0_weight_counter <= op0_weight_counter + num_groups_reg;
         end
     end
 
@@ -734,7 +742,7 @@ module op_decoder #
         end else if(init) begin
             op1_weight_counter <= 0; 
         end else if (op1_done && (op1 == 4'b0101 || op1 == 4'b0110 || op1 == 4'b0111)) begin
-            op1_weight_counter <= op1_weight_counter + num_groups;
+            op1_weight_counter <= op1_weight_counter + num_groups_reg;
         end
     end
 
@@ -744,7 +752,7 @@ module op_decoder #
         end else if(init) begin
             op2_weight_counter <= 0; 
         end else if (op2_done && (op2 == 4'b0101 || op2 == 4'b0110 || op2 == 4'b0111)) begin
-            op2_weight_counter <= op2_weight_counter + num_groups;
+            op2_weight_counter <= op2_weight_counter + num_groups_reg;
         end
     end
 
@@ -754,7 +762,7 @@ module op_decoder #
         end else if(init) begin
             op3_weight_counter <= 0; 
         end else if (op3_done && (op3 == 4'b0101 || op3 == 4'b0110 || op3 == 4'b0111)) begin
-            op3_weight_counter <= op3_weight_counter + num_groups;
+            op3_weight_counter <= op3_weight_counter + num_groups_reg;
         end
     end
 

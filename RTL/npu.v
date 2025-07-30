@@ -255,7 +255,9 @@ module npu #
 
     // GEMM output of stored_num_groups_o
     wire [3:0] stored_num_groups_o,groups;
-    assign groups = (op[3:0] == 4'b0001)? stored_num_groups_o :
+    reg [15:0] groups_per_mac;
+    assign groups = (store_to_sram_en && (groups + groups_per_mac) >= out_channel && (op==16'b0000000000000001 || op==16'b0000000000000010))? out_channel - groups_per_mac :
+                    (op[3:0] == 4'b0001)? stored_num_groups_o :
                     (op[3:0] == 4'b0010)? stored_num_groups_o : 4'd8;
 
     // repacker signals
@@ -779,8 +781,22 @@ module npu #
     );
     wire [7:0] valid_mask;
     wire repacker_last;
-    assign valid_mask = (1 << groups) - 1;
+    assign valid_mask = (store_to_sram_en && (groups + groups_per_mac) >= out_channel && (op==16'b0000000000000001 || op==16'b0000000000000010)) ? (1 << (out_channel - groups_per_mac)) - 1
+                                                                : (1 << groups) - 1;
     assign repacker_last = (op_total_data_counts >= expected_total_data_counts);
+
+    always @(posedge s00_axis_aclk) begin
+        if(!s00_axis_aresetn) begin
+            groups_per_mac <= 0;
+        end else if(state == OP_DONE) begin
+            groups_per_mac <= 0;
+        end else if(store_to_sram_en && (groups + groups_per_mac) < out_channel) begin
+            groups_per_mac <= groups_per_mac + groups;
+        end else if(store_to_sram_en && (groups + groups_per_mac) >= out_channel) begin
+            groups_per_mac <= 0;
+        end
+    end
+
     repacker #
     (
         .OUTPUT_WIDTH(C_AXIS_MDATA_WIDTH),

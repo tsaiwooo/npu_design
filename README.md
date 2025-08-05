@@ -72,7 +72,7 @@ Makefile裡面很亂,所以可以自己寫一個:+1:, 都是用VCS, verdi
 # op0_data_counts, op1_data_counts, op2_data_counts, op3_data_counts
 65536 65536 65536 65536
 # op0_input_data_total_counts, op0_weight_total_counts, op1_weight_total_counts, op2_weight_total_counts, op3_weight_total_counts
-0 0 1 0 0
+50700 432 1 0 0
 ##################################################
 
 ##################################################

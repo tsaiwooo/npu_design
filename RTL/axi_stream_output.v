@@ -168,7 +168,7 @@ module axi_stream_output #
         if (reset_condition) begin
             prefetch_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end else if (start_condition && (data_ready || !data_valid_reg)) begin
-            prefetch_addr <= prefetch_addr + 1;
+            prefetch_addr <= prefetch_addr + groups_reg;
         end else begin
             prefetch_addr <= {MAX_ADDR_WIDTH{1'b0}};
         end

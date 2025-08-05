@@ -12,7 +12,7 @@ TESTBENCH_FILE = tb_model.sv
 
 # Define source files
 DESIGN_SRC = $(RTL_DIR)/$(DESIGN_FILE) $(RTL_DIR)/GEMM.v $(RTL_DIR)/element_wise.v \
-			 $(RTL_DIR)/multi_sram.v $(RTL_DIR)/mac.v  $(RTL_DIR)/sram.v $(RTL_DIR)/axi_stream_output.v \
+			 $(RTL_DIR)/multi_sram.v $(RTL_DIR)/mac.v  $(RTL_DIR)/axi_stream_output.v \
 			 $(RTL_DIR)/axi_stream_input.v $(RTL_DIR)/convolution.v $(RTL_DIR)/sram_controller.v \
 			 $(RTL_DIR)/MultiplyByQuantizedMultiplier.v $(RTL_DIR)/RoundingDivideByPOT.v \
 			 $(RTL_DIR)/exp.v $(RTL_DIR)/reciprocal_over_1.v $(RTL_DIR)/FIFO.v $(RTL_DIR)/sram_64bits.v \
